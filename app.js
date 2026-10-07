@@ -243,6 +243,7 @@
     if (step.type === "decision") renderDecision(u, step, card, nextBtn);
     else if (step.type === "task") renderTask(u, step, card, nextBtn);
     else if (step.type === "reflection") renderReflection(u, step, card, nextBtn);
+    else if (step.type === "compare") renderCompare(u, step, card);
     else if (step.type === "takeaway") card.append(el("h3", {}, "Takeaway"), mdBlock(step.md, "takeaway"));
     else card.append(el("h3", {}, step.title), mdBlock(step.md));
 
@@ -335,10 +336,21 @@
       card.append(el("p", { class: "small" }, "To share a screenshot, use the ", el("a", { href: CFG.FIELD_MISSION_FORM_URL, target: "_blank", rel: "noopener" }, "upload form"), ". Remove names and personal details first."));
     }
     if (step.kind === "field_mission") card.append(el("p", { class: "small muted" }, "You can save what you have now and come back to add more later."));
+    if (step.hasExample) card.append(el("p", { class: "small muted" }, "After you save, the next page shows an example to compare with."));
     card.append(ta, el("div", { class: "actions" }, saveBtn), out);
     if (reveal) card.append(reveal);
     appendFeedback(card, prev);
     if (!prev && step.kind !== "field_mission") nextBtn.disabled = true;
+  }
+
+  function renderCompare(u, step, card) {
+    const prev = S.responses[respKey(u.id, step.kind, step.key)];
+    card.append(el("h3", {}, "Compare with an example"),
+      el("p", { class: "small muted" }, "Your answer"),
+      el("div", { class: "md" }, el("blockquote", {}, el("p", { style: "white-space:pre-wrap" }, prev ? prev.answer.text : "You haven't saved an answer yet."))),
+      el("p", { class: "small muted", style: "margin-top:16px" }, "One possible answer"),
+      mdBlock(step.md),
+      el("p", { class: "small muted" }, "There's no single right version. What's similar, and what would you keep from yours?"));
   }
 
   function renderReflection(u, step, card, nextBtn) {

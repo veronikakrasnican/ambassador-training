@@ -82,11 +82,23 @@
         } else if (h.startsWith("your turn")) {
           const paras = splitParagraphs(s.md);
           const reveal = paras.filter(p => REVEAL_RE.test(p));
-          const prompt = paras.filter(p => !REVEAL_RE.test(p));
+          const examples = [];
+          let prompt = [];
+          paras.filter(p => !REVEAL_RE.test(p)).forEach((p, j, arr) => {
+            const prev = j > 0 ? arr[j - 1] : "";
+            const isQuote = p.startsWith(">");
+            if (isQuote && (/^>\s*\*?Example/i.test(p) || /example:\s*$/i.test(prev))) examples.push(p.replace(/^>\s*\*?Example:\*?\s*/i, "> "));
+            else prompt.push(p);
+          });
+          if (examples.length) {
+            prompt = prompt.map(p => p.replace(/\s*(Then compare it with (this|the) example( below)?[.:]|For example:)\s*$/i, "")).filter(Boolean);
+          }
+          const key = "s" + i;
           steps.push({
             type: "task", title: s.heading, md: prompt.join("\n\n"), reveal: reveal.join("\n\n"),
-            kind: h.includes("field mission") ? "field_mission" : "your_turn", key: "s" + i
+            kind: h.includes("field mission") ? "field_mission" : "your_turn", key, hasExample: examples.length > 0
           });
+          if (examples.length) steps.push({ type: "compare", title: "Compare with an example", md: examples.join("\n\n"), key, kind: h.includes("field mission") ? "field_mission" : "your_turn" });
         } else if (h.startsWith("takeaway")) {
           steps.push({ type: "takeaway", title: "Takeaway", md: s.md });
         } else {

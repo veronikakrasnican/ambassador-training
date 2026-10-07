@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ENAI Ambassador Training</title>
+<link rel="icon" href="assets/logo.png">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Zilla+Slab:wght@600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="brand">
+    <div class="blob" aria-hidden="true"></div>
+    <div class="row">
+      <img class="logo" src="assets/logo.png" alt="ENAI Student Ambassadors Team">
+      <div class="who" id="who"></div>
+    </div>
+    <h1>Ambassador Training</h1>
+    <svg class="uline" viewBox="0 0 240 12" aria-hidden="true"><path d="M2 8 C 60 2, 120 12, 238 4" fill="none" stroke="var(--accent-2)" stroke-width="4" stroke-linecap="round"/></svg>
+    <p class="lead" id="lead">Short case files on academic integrity, to take at your own pace.</p>
+  </header>
+
+  <main id="app" aria-live="polite"></main>
+  <div class="footbar" aria-hidden="true"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="config.js"></script>
+<script src="parser.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

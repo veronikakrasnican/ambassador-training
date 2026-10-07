@@ -93,32 +93,29 @@
       renderCode(email.value.trim());
     } },
       el("h2", {}, "Sign in"),
-      el("p", {}, "Enter your email address. We'll send you a sign-in code, so there's no password to remember. Your progress is saved, and you can continue any time."),
+      el("p", {}, "Enter your email address. We'll send you a sign-in link, so there's no password to remember. Your progress is saved, and you can continue any time."),
       el("label", { class: "field", for: "email" }, "Email address"), email,
-      el("div", { class: "actions" }, el("button", { class: "btn primary", type: "submit" }, "Send sign-in code")),
+      el("div", { class: "actions" }, el("button", { class: "btn primary", type: "submit" }, "Send sign-in link")),
       out
     );
     show(el("section", { class: "panel" }, form), note ? msg(note, "ok") : null);
   }
 
   function renderCode(address) {
-    const code = el("input", { type: "text", id: "code", inputmode: "numeric", autocomplete: "one-time-code", maxlength: 10, placeholder: "123456" });
     const out = el("div");
-    const form = el("form", { onsubmit: async e => {
-      e.preventDefault(); out.replaceChildren();
-      const { error } = await sb.auth.verifyOtp({ email: address, token: code.value.trim(), type: "email" });
-      if (error) out.append(msg("That code didn't work. Check it, or send a new one."));
-    } },
+    const resend = el("button", { class: "btn", type: "button", onclick: async () => {
+      resend.disabled = true; out.replaceChildren();
+      const { error } = await sb.auth.signInWithOtp({ email: address, options: { emailRedirectTo: location.origin + location.pathname } });
+      out.append(error ? msg("We couldn't send the email: " + error.message) : msg("We sent a new link.", "ok"));
+      setTimeout(() => { resend.disabled = false; }, 60000);
+    } }, "Send the link again");
+    show(el("section", { class: "panel" },
       el("h2", {}, "Check your email"),
-      el("p", {}, "We sent a sign-in email to ", el("b", {}, address), ". Enter the code from the email, or click the link in it."),
-      el("label", { class: "field", for: "code" }, "Sign-in code"), code,
-      el("div", { class: "actions" },
-        el("button", { class: "btn primary", type: "submit" }, "Sign in"),
+      el("p", {}, "We sent a sign-in link to ", el("b", {}, address), ". Click the link in the email and you'll come straight back here, signed in."),
+      el("p", { class: "small muted" }, "The link works once and expires after an hour. If the email isn't there in a few minutes, check your spam folder."),
+      el("div", { class: "actions" }, resend,
         el("button", { class: "btn link", type: "button", onclick: () => renderLogin() }, "Use a different email")),
-      out
-    );
-    show(el("section", { class: "panel" }, form));
-    code.focus();
+      out));
   }
 
   // ---------- onboarding ----------

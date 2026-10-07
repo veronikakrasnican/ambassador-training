@@ -27,7 +27,7 @@
     return n;
   }
   const mdBlock = (text, cls = "") => el("div", { class: ("md " + cls).trim(), html: md(text) });
-  function show(...nodes) { $app.replaceChildren(...nodes); window.scrollTo({ top: 0 }); }
+  function show(...nodes) { $app.replaceChildren(...nodes.filter(Boolean)); window.scrollTo({ top: 0 }); }
   function msg(text, type = "err") { return el("div", { class: "msg " + type, role: type === "err" ? "alert" : "status" }, text); }
   function go(hash) { if (location.hash === hash) route(); else location.hash = hash; }
   const respKey = (unitId, kind, key) => unitId + "|" + kind + "|" + key;

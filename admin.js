@@ -6,7 +6,9 @@
   const $app = document.getElementById("app");
   const $who = document.getElementById("who");
   const INACTIVE_DAYS = 21;
-  const D = { modules: [], units: [], students: [], progress: [], responses: [], feedback: [] };
+  const D = { modules: [], units: [], students: [], progress: [], responses: [], feedback: [], decisions: [] };
+  const C = {}; // parsed content per unit id
+  let openDecision = null, answersUnit = "";
   let view = "overview", detailId = null, showAnswered = false, filter = "";
 
   // ---------- helpers ----------
@@ -36,11 +38,18 @@
       sb.from("students").select("*").order("joined_at"),
       sb.from("progress").select("*"),
       sb.from("responses").select("*").order("created_at"),
-      sb.from("feedback").select("*").order("created_at")
+      sb.from("feedback").select("*").order("created_at"),
+      sb.from("decisions").select("*")
     ]);
     const err = [m, u, s, p, r, f].find(x => x.error);
     if (err) throw err.error;
     Object.assign(D, { modules: m.data, units: u.data, students: s.data, progress: p.data, responses: r.data, feedback: f.data });
+    D.decisions = (await sb.from("decisions").select("*")).data || [];
+    if (!Object.keys(C).length) {
+      await Promise.all(CFG.MODULE_FILES.map(async (path, i) => {
+        try { const t = await (await fetch(path, { cache: "no-cache" })).text(); window.CourseParser.parseModule(t, i + 1).units.forEach(x => C[x.id] = x); } catch (e) {}
+      }));
+    }
   }
 
   function studentStats(st) {
@@ -54,6 +63,11 @@
     const inactive = pct < 100 && daysAgo(st.last_active_at) >= INACTIVE_DAYS;
     return { perModule, pct, done: done.size, inactive };
   }
+
+  const sName = id => { const st = D.students.find(s => s.id === id) || {}; return st.full_name || st.email || "Unknown"; };
+  const decisionSteps = uid => (C[uid] ? C[uid].steps.filter(x => x.type === "decision") : []);
+  const optLabel = (uid, caseNo, l) => { const st = decisionSteps(uid).find(x => x.caseNo === caseNo); const o = st && st.options.find(x => x.letter === l); return l + (o ? ". " + o.label : ""); };
+  const promptTitle = (uid, key) => { const st = C[uid] && C[uid].steps.find(x => x.key === key); return st ? st.title : key; };
 
   const pendingReflections = () => D.responses.filter(r => r.kind === "reflection" && !D.feedback.some(f => f.response_id === r.id));
 
@@ -77,7 +91,7 @@
   function tabs() {
     const pending = pendingReflections().length;
     const t = (id, label) => el("button", { class: "btn" + (view === id ? " on" : ""), onclick: () => { view = id; render(); } }, label);
-    return el("div", { class: "tabs" }, t("overview", "Overview"), t("inbox", "Feedback inbox" + (pending ? " (" + pending + ")" : "")),
+    return el("div", { class: "tabs" }, t("overview", "Overview"), t("decisions", "Decisions"), t("answers", "Answers by unit"), t("inbox", "Feedback inbox" + (pending ? " (" + pending + ")" : "")),
       el("button", { class: "btn link", onclick: async () => { await refresh(); } }, "Refresh"));
   }
 
@@ -129,7 +143,7 @@
     const fbs = D.feedback.filter(f => f.response_id === r.id);
     const kindLabel = { reflection: "Reflection", your_turn: "Your turn", quiz: "Quiz", field_mission: "Field mission" }[r.kind] || r.kind;
     return el("div", { class: "item" },
-      el("div", { class: "meta" }, (withStudent ? (st.full_name || st.email) + " · " + (st.institution || "") + " · " : "") + kindLabel + " · " + (unit.kind === "unit" ? unit.id + " " : "") + unit.title + " · " + fmt(r.updated_at || r.created_at)),
+      el("div", { class: "meta" }, (withStudent ? (st.full_name || st.email) + " · " + (st.institution || "") + " · " : "") + (r.kind === "reflection" ? "Reflection" : promptTitle(r.unit_id, r.prompt_key)) + " · " + (unit.kind === "unit" ? unit.id + " " : "") + unit.title + " · " + fmt(r.updated_at || r.created_at)),
       el("div", { class: "answer" }, answerText(r)),
       ...fbs.map(f => el("div", { class: "feedback" }, el("div", { class: "who" }, "Feedback · " + fmt(f.created_at) + (f.read_at ? " · read" : " · not read yet")), el("div", { class: "answer" }, f.body))),
       r.kind === "reflection" || fbs.length === 0 ? replyBox(r) : null);
@@ -158,8 +172,73 @@
         ...D.modules.map(m => el("div", { style: "margin-top:10px" },
           el("b", {}, "Module " + m.id + ": " + m.title), el("div", { class: "small" },
             D.units.filter(u => u.module_id === m.id).map(u => (u.kind === "unit" ? u.id : "R") + " " + ({ completed: "✓", in_progress: "…", not_started: "–" }[prog(u.id)])).join("   "))))),
+      el("h2", {}, "Decisions"),
+      (() => { const ds = D.decisions.filter(d => d.student_id === s.id).sort((a, b) => a.unit_id.localeCompare(b.unit_id, undefined, { numeric: true }) || a.case_no - b.case_no);
+        return ds.length ? el("div", { class: "scroll" }, el("table", { class: "grid" },
+          el("thead", {}, el("tr", {}, el("th", {}, "Unit"), el("th", {}, "First choice"), el("th", {}, "After debrief"), el("th", {}, "Changed?"))),
+          el("tbody", {}, ...ds.map(d => el("tr", {},
+            el("td", {}, d.unit_id + (decisionSteps(d.unit_id).length > 1 ? " · case " + d.case_no : "")),
+            el("td", { style: "white-space:normal" }, optLabel(d.unit_id, d.case_no, d.first_choice)),
+            el("td", { style: "white-space:normal" }, d.second_choice ? optLabel(d.unit_id, d.case_no, d.second_choice) : "–"),
+            el("td", { class: d.second_choice && d.second_choice !== d.first_choice ? "flag" : "" }, d.second_choice ? (d.second_choice !== d.first_choice ? "Yes" : "No") : "–"))))))
+          : el("p", { class: "muted" }, "No decisions yet."); })(),
       el("h2", {}, "Answers"),
       resps.length ? el("div", {}, ...resps.map(r => responseItem(r, false))) : el("p", { class: "muted" }, "No written answers yet."));
+  }
+
+  function renderDecisions() {
+    const blocks = [];
+    for (const u of D.units.filter(x => x.kind === "unit")) {
+      const cases = decisionSteps(u.id).length ? decisionSteps(u.id).map(x => x.caseNo) : [...new Set(D.decisions.filter(d => d.unit_id === u.id).map(d => d.case_no))];
+      for (const c of cases) {
+        const rows = D.decisions.filter(d => d.unit_id === u.id && d.case_no === c);
+        const n = rows.length;
+        const key = u.id + "|" + c;
+        const letters = ["A", "B", "C", "D"];
+        const pc = (cnt) => n ? Math.round(100 * cnt / n) + "%" : "–";
+        const changed = rows.filter(d => d.second_choice && d.second_choice !== d.first_choice);
+        const trans = {};
+        changed.forEach(d => { const k = d.first_choice + " → " + d.second_choice; trans[k] = (trans[k] || 0) + 1; });
+        const top = Object.entries(trans).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => k + " (" + v + ")").join(", ");
+        const table = el("div", { class: "scroll" }, el("table", { class: "grid" },
+          el("thead", {}, el("tr", {}, el("th", {}, "Option"), el("th", {}, "First choice"), el("th", {}, "Final choice (after debrief)"))),
+          el("tbody", {}, ...letters.map(l => el("tr", {},
+            el("td", { style: "white-space:normal" }, optLabel(u.id, c, l)),
+            el("td", {}, pc(rows.filter(d => d.first_choice === l).length)),
+            el("td", {}, pc(rows.filter(d => (d.second_choice || d.first_choice) === l).length)))))));
+        const list = openDecision === key ? el("div", { class: "scroll", style: "margin-top:10px" }, el("table", { class: "grid" },
+          el("thead", {}, el("tr", {}, el("th", {}, "Ambassador"), el("th", {}, "First choice"), el("th", {}, "After debrief"), el("th", {}, "Changed?"))),
+          el("tbody", {}, ...rows.map(d => el("tr", {},
+            el("td", {}, sName(d.student_id)), el("td", {}, optLabel(u.id, c, d.first_choice)),
+            el("td", {}, d.second_choice ? optLabel(u.id, c, d.second_choice) : "–"),
+            el("td", { class: d.second_choice && d.second_choice !== d.first_choice ? "flag" : "" }, d.second_choice ? (d.second_choice !== d.first_choice ? "Yes" : "No, confirmed") : "No second answer")))))) : null;
+        blocks.push(el("div", { class: "item" },
+          el("div", { class: "meta" }, n + " answers · " + rows.filter(d => d.second_choice).length + " gave a second answer · " + changed.length + " changed their mind" + (top ? " · most common: " + top : "")),
+          el("h3", {}, u.id + " " + u.title + (cases.length > 1 ? " · case " + c : "")),
+          table,
+          n ? el("div", { class: "actions" }, el("button", { class: "btn", onclick: () => { openDecision = openDecision === key ? null : key; render(); } }, openDecision === key ? "Hide individual answers" : "Show individual answers")) : null,
+          list));
+      }
+    }
+    show(tabs(), el("p", { class: "muted" }, "First choice is locked when they answer. Final choice is their optional second answer after reading the debrief, or their first choice if they didn't change it."), ...blocks);
+  }
+
+  function renderAnswers() {
+    const withAnswers = D.units.filter(u => D.responses.some(r => r.unit_id === u.id));
+    if (!answersUnit && withAnswers.length) answersUnit = withAnswers[0].id;
+    const sel = el("select", { onchange: e => { answersUnit = e.target.value; render(); } },
+      ...D.units.map(u => { const n = D.responses.filter(r => r.unit_id === u.id).length;
+        return el("option", { value: u.id, selected: u.id === answersUnit }, (u.kind === "unit" ? u.id + " " : "") + u.title + " (" + n + ")"); }));
+    const resps = D.responses.filter(r => r.unit_id === answersUnit);
+    const groups = {};
+    resps.forEach(r => { const k = r.kind + "|" + r.prompt_key; (groups[k] = groups[k] || []).push(r); });
+    const decs = D.decisions.filter(d => d.unit_id === answersUnit);
+    show(tabs(), el("div", { class: "filters" }, el("label", {}, "Unit "), sel),
+      decs.length ? el("p", { class: "small muted" }, decs.length + " decision answers in this unit. See the Decisions tab for the breakdown.") : null,
+      ...Object.entries(groups).map(([k, rs]) => el("div", {},
+        el("h2", {}, rs[0].kind === "reflection" ? "Reflection" : promptTitle(answersUnit, rs[0].prompt_key)),
+        ...rs.map(r => responseItem(r, true)))),
+      resps.length ? null : el("p", { class: "muted" }, "No written answers for this unit yet."));
   }
 
   function exportCsv() {
@@ -175,6 +254,8 @@
 
   function render() {
     if (view === "inbox") renderInbox();
+    else if (view === "decisions") renderDecisions();
+    else if (view === "answers") renderAnswers();
     else if (view === "detail") renderDetail();
     else renderOverview();
   }

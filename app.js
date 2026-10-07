@@ -176,6 +176,7 @@
       el("div", { class: "actions" },
         next ? el("button", { class: "btn primary", onclick: () => go("#/unit/" + next.id) },
           unitState(next.id) === "in_progress" ? "Continue " + next.id + " " + next.title : (done ? "Start " : "Begin with ") + next.id + " " + next.title) : null,
+        done || Object.keys(S.responses).length ? el("button", { class: "btn", onclick: () => go("#/summary") }, "My summary") : null,
         S.student.badge_awarded_at ? el("button", { class: "btn", onclick: () => go("#/badge") }, "View your badge") : null)
     ));
 
@@ -228,8 +229,13 @@
       el("p", { class: "kicker" }, el("button", { class: "btn link", onclick: () => go("#/") }, "All modules"), " · Module " + u.moduleNo),
       el("h2", {}, (u.kind === "unit" ? u.id + " " : "") + u.title),
       u.intro && stepIdx === 0 ? el("p", { class: "intro" }, u.intro) : null,
-      u.steps.length > 1 ? el("div", { class: "steps", "aria-label": "Step " + (stepIdx + 1) + " of " + u.steps.length },
-        ...u.steps.map((_, i) => el("span", { class: i < stepIdx ? "done" : i === stepIdx ? "now" : "" }))) : null);
+      u.steps.length > 1 ? el("div", { class: "steps", role: "navigation", "aria-label": "Step " + (stepIdx + 1) + " of " + u.steps.length },
+        ...u.steps.map((st, i) => {
+          const reached = unitState(id) === "completed" || i <= Math.max(stepIdx, Number((S.progress[id] || {}).current_step || 0));
+          return el("button", { class: (i < stepIdx ? "done" : i === stepIdx ? "now" : "") + (reached ? " reach" : ""), disabled: !reached,
+            title: "Step " + (i + 1) + ": " + st.title, "aria-label": "Step " + (i + 1) + ": " + st.title,
+            onclick: () => go("#/unit/" + id + "/" + i) });
+        })) : null);
 
     const card = el("section", { class: "panel" });
     const nav = el("div", { class: "actions" });
@@ -378,6 +384,53 @@
     }
   }
 
+  // ---------- summary ----------
+  function renderSummary() {
+    const nodes = [el("div", { class: "unit-head" },
+      el("p", { class: "kicker" }, el("button", { class: "btn link", onclick: () => go("#/") }, "All modules")),
+      el("h2", {}, "My summary"),
+      el("p", { class: "intro" }, "Everything you've done so far, in one place. Use the buttons to jump straight back to any step."))];
+    let any = false;
+    for (const m of S.course) {
+      const cards = [];
+      for (const u of m.units) {
+        const items = [];
+        u.steps.forEach((st, i) => {
+          const jump = el("button", { class: "btn link small", onclick: () => go("#/unit/" + u.id + "/" + i) }, "Open this step");
+          if (st.type === "decision") {
+            const d = S.decisions[u.id + "|" + st.caseNo];
+            if (!d) return;
+            const lab = l => { const o = st.options.find(x => x.letter === l); return l + ". " + (o ? o.label : ""); };
+            items.push(el("div", { class: "sum-item" },
+              el("div", { class: "small muted" }, "Decision" + (u.steps.filter(x => x.type === "decision").length > 1 ? " (case " + st.caseNo + ")" : "")),
+              el("div", {}, "Your choice: ", el("b", {}, lab(d.first_choice))),
+              d.second_choice && d.second_choice !== d.first_choice ? el("div", {}, "After the debrief: ", el("b", {}, lab(d.second_choice))) : null,
+              jump));
+          } else if (st.type === "task" || st.type === "reflection") {
+            const r = S.responses[respKey(u.id, st.type === "reflection" ? "reflection" : st.kind, st.type === "reflection" ? "main" : st.key)];
+            if (!r) return;
+            const fbs = S.feedback.filter(f => f.response_id === r.id);
+            items.push(el("div", { class: "sum-item" },
+              el("div", { class: "small muted" }, st.title),
+              el("div", { style: "white-space:pre-wrap" }, r.answer.text || ""),
+              ...fbs.map(f => el("div", { class: "feedback" }, el("div", { class: "who" }, "Feedback from ENAI · " + fmtDate(f.created_at)), mdBlock(f.body))),
+              jump));
+          }
+        });
+        const stt = unitState(u.id);
+        if (!items.length && stt === "not_started") continue;
+        cards.push(el("section", { class: "panel" },
+          el("h3", {}, (u.kind === "unit" ? u.id + " " : "") + u.title),
+          el("p", { class: "small muted", style: "margin-top:-4px" }, stt === "completed" ? "Completed" : "In progress"),
+          ...items,
+          el("div", { class: "actions" }, el("button", { class: "btn", onclick: () => go("#/unit/" + u.id + "/0") }, "Open unit"))));
+      }
+      if (cards.length) { any = true; nodes.push(el("h2", {}, "Module " + m.moduleNo + ": " + m.moduleTitle), ...cards); }
+    }
+    if (!any) nodes.push(el("p", { class: "muted" }, "Nothing here yet. Start a unit and your choices and answers will appear here."));
+    show(...nodes);
+  }
+
   // ---------- badge ----------
   function badgeSvg(name, date) {
     const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -417,6 +470,7 @@
     const parts = location.hash.replace(/^#\/?/, "").split("/");
     if (parts[0] === "unit" && parts[1]) return renderUnit(decodeURIComponent(parts[1]), parts[2] != null ? Number(parts[2]) : null);
     if (parts[0] === "badge") return renderBadge();
+    if (parts[0] === "summary") return renderSummary();
     renderHome();
   }
 

@@ -94,9 +94,13 @@ label.field { display: block; margin: 14px 0 6px; font-weight: 600; font-size: 1
 
 /* Unit view */
 .steps { display: flex; gap: 4px; margin: 6px 0 18px; }
-.steps span { flex: 1; height: 6px; border-radius: 999px; background: var(--beige); }
-.steps span.done { background: var(--sage); }
-.steps span.now { background: var(--accent); }
+.steps button { flex: 1; height: 18px; border: 0; padding: 6px 0; background: transparent; cursor: pointer; position: relative; }
+.steps button::before { content: ""; position: absolute; left: 0; right: 0; top: 6px; height: 6px; border-radius: 999px; background: var(--beige); }
+.steps button.done::before { background: var(--sage); }
+.steps button.now::before { background: var(--accent); }
+.steps button.reach:not(.now):hover::before { background: var(--accent-2); }
+.steps button[disabled] { cursor: default; }
+.sum-item { border-top: 1px solid var(--line); padding: 10px 0; }
 .unit-head .kicker { color: var(--muted); font-size: 14px; margin: 0; }
 .unit-head h2 { margin: 2px 0 6px; font-size: 30px; }
 .unit-head .intro { margin: 0 0 18px; color: var(--muted); font-style: italic; max-width: 62ch; }

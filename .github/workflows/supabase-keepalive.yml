@@ -1,0 +1,35 @@
+# Keeps the ENAI Ambassador Training Supabase project active.
+# Free Supabase projects pause after 7 days without activity.
+# This workflow calls a small keepalive() function every 3 days.
+#
+# Setup:
+# 1. Put this file in your app repository at: .github/workflows/supabase-keepalive.yml
+# 2. In the repository: Settings > Secrets and variables > Actions > New repository secret
+#      SUPABASE_URL  = https://gfdnsqwjnmpxodarjjcn.supabase.co
+#      SUPABASE_KEY  = the publishable key (Supabase dashboard > Project Settings > API Keys)
+# 3. Go to the Actions tab and run "Supabase keep-alive" once manually to test it.
+
+name: Supabase keep-alive
+
+on:
+  schedule:
+    - cron: "0 6 */3 * *"   # 06:00 UTC every 3 days
+  workflow_dispatch:         # allows a manual run from the Actions tab
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase
+        run: |
+          status=$(curl -s -o response.txt -w "%{http_code}" -X POST \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/rpc/keepalive" \
+            -H "apikey: ${{ secrets.SUPABASE_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{}')
+          echo "HTTP status: $status"
+          cat response.txt
+          if [ "$status" -ne 200 ]; then
+            echo "Keep-alive ping failed"
+            exit 1
+          fi

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Admin · ENAI Ambassador Training</title>
+<link rel="icon" href="assets/logo.png">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Zilla+Slab:wght@600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<style>
+  .wrap { max-width: 1100px; }
+  .tabs { display: flex; gap: 8px; margin: 8px 0 18px; flex-wrap: wrap; }
+  .tabs .btn.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .stat { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  .stat .n { font-family: "Zilla Slab", Georgia, serif; font-size: 32px; font-weight: 700; color: var(--accent); line-height: 1.1; }
+  .stat .l { font-size: 14px; color: var(--muted); }
+  .scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--card); }
+  table.grid { border-collapse: collapse; width: 100%; font-size: 14px; }
+  table.grid th, table.grid td { padding: 9px 10px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+  table.grid th { background: var(--beige); font-weight: 600; position: sticky; top: 0; }
+  table.grid tr:hover td { background: var(--accent-soft); cursor: pointer; }
+  .cell { display: inline-block; min-width: 46px; text-align: center; border-radius: 999px; padding: 2px 8px; font-size: 13px; background: var(--beige); }
+  .cell.full { background: var(--accent); color: #fff; }
+  .cell.part { background: var(--sage); color: #1B2021; }
+  .flag { color: var(--warn); font-weight: 600; }
+  .item { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin-bottom: 14px; }
+  .item .meta { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .item .answer { white-space: pre-wrap; margin: 8px 0 12px; }
+  .item textarea { min-height: 100px; }
+  .filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  .filters input, .filters select { width: auto; min-width: 200px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="brand">
+    <div class="blob" aria-hidden="true"></div>
+    <div class="row">
+      <img class="logo" src="assets/logo.png" alt="ENAI Student Ambassadors Team">
+      <div class="who" id="who"></div>
+    </div>
+    <h1>Training Admin</h1>
+    <svg class="uline" viewBox="0 0 240 12" aria-hidden="true"><path d="M2 8 C 60 2, 120 12, 238 4" fill="none" stroke="var(--accent-2)" stroke-width="4" stroke-linecap="round"/></svg>
+    <p class="lead">Progress, inactivity and reflections for the ENAI Ambassador Training.</p>
+  </header>
+  <main id="app" aria-live="polite"></main>
+  <div class="footbar" aria-hidden="true"></div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="admin.js"></script>
+</body>
+</html>

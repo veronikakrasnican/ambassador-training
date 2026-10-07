@@ -56,7 +56,7 @@
       sb.from("progress").select("*").eq("student_id", uid),
       sb.from("responses").select("id, unit_id, kind, prompt_key, answer, updated_at").eq("student_id", uid),
       sb.from("decisions").select("*").eq("student_id", uid),
-      sb.from("feedback").select("id, body, created_at, read_at, response_id, responses!inner(unit_id, student_id)").eq("responses.student_id", uid)
+      sb.from("feedback").select("id, body, created_at, read_at, response_id, responses!inner(unit_id, student_id, kind, prompt_key)").eq("responses.student_id", uid)
     ]);
     S.progress = {}; (p.data || []).forEach(x => S.progress[x.unit_id] = x);
     S.responses = {}; (r.data || []).forEach(x => S.responses[respKey(x.unit_id, x.kind, x.prompt_key)] = x);
@@ -182,9 +182,12 @@
     if (unread.length) {
       nodes.push(el("section", { class: "panel" },
         el("h3", {}, unread.length === 1 ? "You have new feedback" : "You have " + unread.length + " new pieces of feedback"),
-        el("p", {}, "An ENAI representative replied to your reflection. Open it to read the feedback."),
-        el("div", { class: "actions" }, ...[...new Set(unread.map(f => f.responses.unit_id))].map(uid =>
-          el("button", { class: "btn", onclick: () => go("#/unit/" + uid) }, (S.unitById[uid] || { title: uid }).title)))));
+        el("p", {}, "An ENAI representative replied to one of your answers. Open it to read the feedback."),
+        el("div", { class: "actions" }, ...unread.filter((f, i, a) => a.findIndex(x => x.response_id === f.response_id) === i).map(f => {
+          const uid = f.responses.unit_id, u = S.unitById[uid];
+          const idx = u ? Math.max(0, u.steps.findIndex(st => st.key === f.responses.prompt_key)) : 0;
+          return el("button", { class: "btn", onclick: () => go("#/unit/" + uid + "/" + idx) }, u ? (u.kind === "unit" ? u.id + " " : "") + u.title : uid);
+        }))));
     }
 
     for (const m of S.course) {
@@ -332,7 +335,9 @@
       card.append(el("p", { class: "small" }, "To share a screenshot, use the ", el("a", { href: CFG.FIELD_MISSION_FORM_URL, target: "_blank", rel: "noopener" }, "upload form"), ". Remove names and personal details first."));
     }
     if (step.kind === "field_mission") card.append(el("p", { class: "small muted" }, "You can save what you have now and come back to add more later."));
-    card.append(ta, el("div", { class: "actions" }, saveBtn), out, reveal);
+    card.append(ta, el("div", { class: "actions" }, saveBtn), out);
+    if (reveal) card.append(reveal);
+    appendFeedback(card, prev);
     if (!prev && step.kind !== "field_mission") nextBtn.disabled = true;
   }
 
@@ -350,8 +355,12 @@
       } }, prev ? "Update reflection" : "Send reflection")), out);
     if (!prev) nextBtn.disabled = true;
 
-    const fb = prev ? S.feedback.filter(f => f.response_id === prev.id) : [];
-    for (const f of fb) {
+    appendFeedback(card, prev);
+  }
+
+  function appendFeedback(card, resp) {
+    if (!resp) return;
+    for (const f of S.feedback.filter(x => x.response_id === resp.id)) {
       card.append(el("div", { class: "feedback" }, el("div", { class: "who" }, "Feedback from ENAI · " + fmtDate(f.created_at)), mdBlock(f.body)));
       if (!f.read_at) sb.from("feedback").update({ read_at: new Date().toISOString() }).eq("id", f.id).then(() => { f.read_at = new Date().toISOString(); });
     }

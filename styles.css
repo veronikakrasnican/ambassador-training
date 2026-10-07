@@ -141,3 +141,11 @@ label.field { display: block; margin: 14px 0 6px; font-weight: 600; font-size: 1
 
 .footbar { width: 190px; height: 8px; border-radius: 999px; background: var(--sage); margin: 40px auto 0; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+.sum-label { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--accent); margin: 14px 0 6px; }
+.sum-item { border-top: 1px solid var(--line); padding: 6px 0 14px; }
+.sum-options { list-style: none; padding: 0; margin: 6px 0 4px; }
+.sum-options li { padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 6px; }
+.sum-options li.mine { border-color: var(--accent); background: var(--accent-soft); }
+.sum-options .tag { display: inline-block; margin-left: 8px; font-size: 12px; font-weight: 600; color: var(--accent); }
+.takeaway p { font-size: 20px; }

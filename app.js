@@ -385,44 +385,65 @@
   }
 
   // ---------- summary ----------
+  function debriefFor(step, letter) {
+    const line = (step.debrief || "").split("\n").find(l => new RegExp("^[-*]\\s+\\*\\*" + letter + "\\.").test(l.trim()));
+    return line ? line.trim().replace(/^[-*]\s+/, "") : "";
+  }
+
   function renderSummary() {
     const nodes = [el("div", { class: "unit-head" },
       el("p", { class: "kicker" }, el("button", { class: "btn link", onclick: () => go("#/") }, "All modules")),
       el("h2", {}, "My summary"),
-      el("p", { class: "intro" }, "Everything you've done so far, in one place. Use the buttons to jump straight back to any step."))];
+      el("p", { class: "intro" }, "Everything you've worked on: each case and question, the choices you made and the answers you wrote. Use the links to jump back to any step."))];
     let any = false;
     for (const m of S.course) {
       const cards = [];
       for (const u of m.units) {
         const items = [];
         u.steps.forEach((st, i) => {
-          const jump = el("button", { class: "btn link small", onclick: () => go("#/unit/" + u.id + "/" + i) }, "Open this step");
+          const jump = el("div", { class: "actions", style: "margin-top:8px" }, el("button", { class: "btn small", onclick: () => go("#/unit/" + u.id + "/" + i) }, "Open this step"));
           if (st.type === "decision") {
             const d = S.decisions[u.id + "|" + st.caseNo];
             if (!d) return;
-            const lab = l => { const o = st.options.find(x => x.letter === l); return l + ". " + (o ? o.label : ""); };
+            let caseStep = null;
+            for (let j = i - 1; j >= 0; j--) { if (/^case file/i.test(u.steps[j].title)) { caseStep = u.steps[j]; break; } if (u.steps[j].type === "decision") break; }
+            const changed = d.second_choice && d.second_choice !== d.first_choice;
             items.push(el("div", { class: "sum-item" },
-              el("div", { class: "small muted" }, "Decision" + (u.steps.filter(x => x.type === "decision").length > 1 ? " (case " + st.caseNo + ")" : "")),
-              el("div", {}, "Your choice: ", el("b", {}, lab(d.first_choice))),
-              d.second_choice && d.second_choice !== d.first_choice ? el("div", {}, "After the debrief: ", el("b", {}, lab(d.second_choice))) : null,
+              caseStep ? el("div", {}, el("div", { class: "sum-label" }, caseStep.title), mdBlock(caseStep.md)) : null,
+              el("div", { class: "sum-label" }, "The question"), mdBlock(st.md),
+              el("ul", { class: "sum-options" }, ...st.options.map(o => {
+                const tags = [];
+                if (o.letter === d.first_choice) tags.push(changed ? "your first choice" : "your choice");
+                if (changed && o.letter === d.second_choice) tags.push("your answer after the debrief");
+                return el("li", { class: tags.length ? "mine" : "" }, el("b", {}, o.letter + ". "), o.label, tags.length ? el("span", { class: "tag" }, tags.join(" · ")) : null);
+              })),
+              el("div", { class: "sum-label" }, "Debrief for your choice"),
+              mdBlock(debriefFor(st, d.first_choice)),
+              changed ? mdBlock(debriefFor(st, d.second_choice)) : null,
               jump));
           } else if (st.type === "task" || st.type === "reflection") {
             const r = S.responses[respKey(u.id, st.type === "reflection" ? "reflection" : st.kind, st.type === "reflection" ? "main" : st.key)];
             if (!r) return;
+            const cmp = st.type === "task" ? u.steps.find(x => x.type === "compare" && x.key === st.key) : null;
             const fbs = S.feedback.filter(f => f.response_id === r.id);
             items.push(el("div", { class: "sum-item" },
-              el("div", { class: "small muted" }, st.title),
-              el("div", { style: "white-space:pre-wrap" }, r.answer.text || ""),
+              el("div", { class: "sum-label" }, st.type === "reflection" ? "Reflection question" : st.title), mdBlock(st.md),
+              el("div", { class: "sum-label" }, "Your answer"),
+              el("div", { class: "md" }, el("blockquote", {}, el("p", { style: "white-space:pre-wrap" }, r.answer.text || ""))),
+              st.reveal ? el("div", {}, el("div", { class: "sum-label" }, "Suggested answer"), mdBlock(st.reveal)) : null,
+              cmp ? el("div", {}, el("div", { class: "sum-label" }, "Example to compare"), mdBlock(cmp.md)) : null,
               ...fbs.map(f => el("div", { class: "feedback" }, el("div", { class: "who" }, "Feedback from ENAI · " + fmtDate(f.created_at)), mdBlock(f.body))),
               jump));
           }
         });
         const stt = unitState(u.id);
         if (!items.length && stt === "not_started") continue;
+        const takeaway = u.steps.find(x => x.type === "takeaway");
         cards.push(el("section", { class: "panel" },
           el("h3", {}, (u.kind === "unit" ? u.id + " " : "") + u.title),
           el("p", { class: "small muted", style: "margin-top:-4px" }, stt === "completed" ? "Completed" : "In progress"),
           ...items,
+          takeaway && stt === "completed" ? el("div", { class: "sum-item" }, el("div", { class: "sum-label" }, "Takeaway"), mdBlock(takeaway.md, "takeaway")) : null,
           el("div", { class: "actions" }, el("button", { class: "btn", onclick: () => go("#/unit/" + u.id + "/0") }, "Open unit"))));
       }
       if (cards.length) { any = true; nodes.push(el("h2", {}, "Module " + m.moduleNo + ": " + m.moduleTitle), ...cards); }

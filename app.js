@@ -14,6 +14,7 @@
 
   // ---------- helpers ----------
   const md = text => window.marked.parse(text || "");
+  const PRIVACY_URL = "https://www.academicintegrity.eu/wp/privacy-policy/";
   function el(tag, attrs = {}, ...children) {
     const n = document.createElement(tag);
     for (const [k, v] of Object.entries(attrs)) {
@@ -96,6 +97,8 @@
       el("p", {}, "Enter your email address. We'll send you a sign-in link, so there's no password to remember. Your progress is saved, and you can continue any time."),
       el("label", { class: "field", for: "email" }, "Email address"), email,
       el("p", { class: "small muted", style: "margin:8px 0 0" }, "Always use the same email address. Your progress is saved to it, and a different address starts a new, empty account."),
+      el("p", { class: "small muted", style: "margin:6px 0 0" }, "We use your email address only to sign you in and to send you messages about this training. Read our ",
+        el("a", { href: PRIVACY_URL, target: "_blank", rel: "noopener" }, "privacy policy"), "."),
       el("div", { class: "actions" }, el("button", { class: "btn primary", type: "submit" }, "Send sign-in link")),
       out
     );
@@ -148,7 +151,8 @@
       el("label", { class: "field", for: "level" }, "Level of study"), level,
       el("div", { class: "check" }, consent,
         el("label", { for: "consent" }, "I agree that ENAI stores my details, progress and answers to run this training and give me feedback. My answers to decisions are shown to other ambassadors only as anonymous percentages. I can ask for my data to be deleted at any time by writing to ",
-          el("a", { href: "mailto:" + CFG.SUPPORT_EMAIL }, CFG.SUPPORT_EMAIL), ".")),
+          el("a", { href: "mailto:" + CFG.SUPPORT_EMAIL }, CFG.SUPPORT_EMAIL), ". I have read the ",
+          el("a", { href: PRIVACY_URL, target: "_blank", rel: "noopener" }, "ENAI privacy policy"), ".")),
       el("div", { class: "actions" }, el("button", { class: "btn primary", type: "submit" }, "Start the training")),
       out
     );
@@ -375,7 +379,7 @@
         el("p", { class: "small muted", style: "margin:0 0 6px" }, "Remove names and personal details before uploading. Only you and ENAI can see your files."),
         input, list);
     }
-    card.append(ta, uploader, el("div", { class: "actions" }, saveBtn), out);
+    card.append(...[ta, uploader, el("div", { class: "actions" }, saveBtn), out].filter(Boolean));
     if (reveal) card.append(reveal);
     appendFeedback(card, prev);
     if (!prev && step.kind !== "field_mission") nextBtn.disabled = true;
@@ -556,35 +560,103 @@
   }
 
   // ---------- badge ----------
-  function badgeSvg(name, date) {
+  let logoDataUrl = null;
+  async function getLogo() {
+    if (logoDataUrl) return logoDataUrl;
+    const blob = await (await fetch("assets/logo.png")).blob();
+    logoDataUrl = await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(blob); });
+    return logoDataUrl;
+  }
+
+  function badgeSvg(name, date, logo) {
     const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-label="ENAI Ambassador badge for ${esc(name)}">
-  <circle cx="200" cy="200" r="190" fill="#FFFCF6" stroke="#3D7D83" stroke-width="10"/>
-  <circle cx="200" cy="200" r="168" fill="none" stroke="#A0C8C4" stroke-width="3"/>
-  <path d="M110 120 C 150 95, 250 140, 290 110" fill="none" stroke="#54A4AC" stroke-width="6" stroke-linecap="round"/>
-  <text x="200" y="88" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="600" fill="#3D7D83">ENAI</text>
-  <text x="200" y="175" text-anchor="middle" font-family="Zilla Slab, Georgia, serif" font-size="34" font-weight="700" fill="#464847">Student</text>
-  <text x="200" y="213" text-anchor="middle" font-family="Zilla Slab, Georgia, serif" font-size="34" font-weight="700" fill="#464847">Ambassador</text>
-  <text x="200" y="246" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="15" fill="#7E817F">Core training completed</text>
-  <text x="200" y="296" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="19" font-weight="600" fill="#3D7D83">${esc(name)}</text>
-  <text x="200" y="322" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="14" fill="#7E817F">${esc(date)}</text>
+    return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 400 400" role="img" aria-label="ENAI Student Ambassador badge for ${esc(name)}">
+  <circle cx="200" cy="200" r="192" fill="#FFFCF6" stroke="#3D7D83" stroke-width="9"/>
+  <circle cx="200" cy="200" r="172" fill="none" stroke="#A0C8C4" stroke-width="2.5"/>
+  <image href="${logo}" xlink:href="${logo}" x="110" y="26" width="180" height="180"/>
+  <text x="200" y="232" text-anchor="middle" font-family="Zilla Slab, Georgia, serif" font-size="22" font-weight="700" fill="#464847">Core Training Completed</text>
+  <path d="M140 246 C 175 238, 225 252, 260 242" fill="none" stroke="#54A4AC" stroke-width="4" stroke-linecap="round"/>
+  <text x="200" y="285" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="600" fill="#3D7D83">${esc(name)}</text>
+  <text x="200" y="311" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="14" fill="#7E817F">${esc(date)}</text>
+  <text x="200" y="343" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="12" letter-spacing="0.5" fill="#7E817F">academicintegrity.eu</text>
 </svg>`;
   }
 
-  function renderBadge() {
+  async function socialImage(name, date) {
+    try { await Promise.all([document.fonts.load('700 64px "Zilla Slab"'), document.fonts.load('600 40px "Inter"'), document.fonts.load('400 28px "Inter"')]); } catch (e) {}
+    const W = 1200, H = 627, c = document.createElement("canvas");
+    c.width = W; c.height = H;
+    const g = c.getContext("2d");
+    g.fillStyle = "#FFFCF6"; g.fillRect(0, 0, W, H);
+    g.fillStyle = "#ECEBDF"; g.beginPath(); g.ellipse(250, 120, 420, 330, 0, 0, Math.PI * 2); g.fill();
+    const img = new Image(); img.src = await getLogo(); await img.decode();
+    g.drawImage(img, 60, 113, 400, 400);
+    const x = 500;
+    g.fillStyle = "#464847"; g.font = '400 30px "Inter", Arial, sans-serif';
+    g.fillText("I've completed the", x, 175);
+    const fit = (text, weight, size, family, maxW) => { let f = size; do { g.font = weight + " " + f + "px " + family; f -= 2; } while (g.measureText(text).width > maxW && f > 16); };
+    fit("ENAI Student Ambassador", "700", 60, '"Zilla Slab", Georgia, serif', 660);
+    g.fillText("ENAI Student Ambassador", x, 250);
+    g.fillText("Training", x, 318);
+    g.strokeStyle = "#54A4AC"; g.lineWidth = 7; g.lineCap = "round";
+    g.beginPath(); g.moveTo(x + 4, 345); g.bezierCurveTo(x + 120, 330, x + 260, 360, x + 420, 338); g.stroke();
+    g.fillStyle = "#3D7D83"; fit(name, "600", 40, '"Inter", Arial, sans-serif', 660);
+    g.fillText(name, x, 420);
+    g.fillStyle = "#7E817F"; fit(date + "  ·  European Network for Academic Integrity", "400", 24, '"Inter", Arial, sans-serif', 660);
+    g.fillText(date + "  ·  European Network for Academic Integrity", x, 465);
+    g.font = '400 24px "Inter", Arial, sans-serif';
+    g.fillText("academicintegrity.eu", x, 505);
+    g.fillStyle = "#A0C8C4"; g.fillRect(0, H - 14, W, 14);
+    return new Promise(res => c.toBlob(res, "image/png"));
+  }
+
+  function download(blob, filename) {
+    const a = el("a", { href: URL.createObjectURL(blob), download: filename });
+    document.body.append(a); a.click(); a.remove();
+  }
+
+  async function renderBadge() {
     if (!S.student.badge_awarded_at) { go("#/"); return; }
-    const svg = badgeSvg(S.student.full_name || S.user.email, fmtDate(S.student.badge_awarded_at));
-    const dl = () => {
-      const a = el("a", { href: URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" })), download: "ENAI-Ambassador-badge.svg" });
-      document.body.append(a); a.click(); a.remove();
-    };
-    show(el("section", { class: "panel badge-wrap" },
-      el("h2", {}, "You've finished the core training"),
-      el("div", { html: svg }),
-      el("p", {}, "Congratulations, and thank you. Your answer kit is ready for the year ahead. You don't have to know everything, and you're never alone in this role."),
-      el("div", { class: "actions", style: "justify-content:center" },
-        el("button", { class: "btn primary", onclick: dl }, "Download badge"),
-        el("button", { class: "btn", onclick: () => go("#/") }, "Back to modules"))));
+    const name = S.student.full_name || S.user.email;
+    const date = fmtDate(S.student.badge_awarded_at);
+    show(el("p", { class: "muted" }, "Preparing your badge…"));
+    const svg = badgeSvg(name, date, await getLogo());
+    const postText = "I'm proud to share that I've completed the ENAI Student Ambassador Training! 🎓\n\n" +
+      "Through a series of real case files I explored academic integrity in practice: grey zones, learning with AI, contract cheating, why students cut corners, and how integrity procedures work. " +
+      "As an ENAI Student Ambassador, I'm here to support fellow students with honest, practical answers.\n\n" +
+      "Thank you to the European Network for Academic Integrity (ENAI) for the training. Learn more at https://www.academicintegrity.eu\n\n" +
+      "#AcademicIntegrity #ENAI #StudentAmbassador #HigherEducation";
+    const ta = el("textarea", { "aria-label": "Post text", style: "min-height:190px" });
+    ta.value = postText;
+    const out = el("div");
+    const preview = el("img", { alt: "Image for social media", style: "width:100%;border-radius:12px;border:1px solid var(--line);margin:6px 0 4px" });
+    socialImage(name, date).then(blob => { preview.src = URL.createObjectURL(blob); preview._blob = blob; });
+
+    show(
+      el("section", { class: "panel badge-wrap" },
+        el("h2", {}, "You've finished the core training"),
+        el("div", { html: svg }),
+        el("p", {}, "Congratulations, and thank you. Your answer kit is ready for the year ahead. You don't have to know everything, and you're never alone in this role."),
+        el("div", { class: "actions", style: "justify-content:center" },
+          el("button", { class: "btn primary", onclick: () => download(new Blob([svg], { type: "image/svg+xml" }), "ENAI-Ambassador-badge.svg") }, "Download badge"),
+          el("button", { class: "btn", onclick: () => go("#/kit") }, "My answer kit"),
+          el("button", { class: "btn", onclick: () => go("#/") }, "Back to modules"))),
+      el("section", { class: "panel" },
+        el("h2", { style: "margin-top:0" }, "Share it on LinkedIn"),
+        el("p", {}, "Want to let others know? Here's a ready-made image and post. Sharing is completely optional."),
+        preview,
+        el("ol", { class: "share-steps" },
+          el("li", {}, el("button", { class: "btn", onclick: async () => {
+            const blob = preview._blob || await socialImage(name, date);
+            download(blob, "ENAI-Ambassador-LinkedIn.png");
+          } }, "Download the image")),
+          el("li", {}, "Copy the post text (edit it as you like):", ta,
+            el("div", { class: "actions", style: "margin-top:8px" }, el("button", { class: "btn", onclick: async () => {
+              try { await navigator.clipboard.writeText(ta.value); out.replaceChildren(msg("Text copied.", "ok")); }
+              catch (e) { ta.select(); out.replaceChildren(msg("Press Ctrl+C (or ⌘+C) to copy the selected text.", "ok")); }
+            } }, "Copy text")), out),
+          el("li", {}, el("a", { class: "btn primary", href: "https://www.linkedin.com/feed/?shareActive=true&text=" + encodeURIComponent(postText), target: "_blank", rel: "noopener", style: "text-decoration:none;display:inline-block" }, "Open LinkedIn"),
+            el("p", { class: "small muted", style: "margin:8px 0 0" }, "LinkedIn opens a new post with the text. Paste your own version if you edited it, then add the downloaded image with the photo icon and post.")))));
   }
 
   // ---------- routing ----------

@@ -155,3 +155,8 @@ label.field { display: block; margin: 14px 0 6px; font-weight: 600; font-size: 1
 .upload input[type=file] { font: inherit; font-size: 14px; }
 .files { list-style: none; padding: 0; margin: 8px 0 0; font-size: 14px; }
 .files li { margin: 4px 0; }
+
+.share-steps { padding-left: 22px; }
+.share-steps li { margin: 14px 0; }
+.share-steps textarea { margin-top: 8px; }
+.badge-wrap svg { width: 300px; }

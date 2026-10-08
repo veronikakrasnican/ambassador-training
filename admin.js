@@ -69,7 +69,7 @@
   const optLabel = (uid, caseNo, l) => { const st = decisionSteps(uid).find(x => x.caseNo === caseNo); const o = st && st.options.find(x => x.letter === l); return l + (o ? ". " + o.label : ""); };
   const promptTitle = (uid, key) => { const st = C[uid] && C[uid].steps.find(x => x.key === key); return st ? st.title : key; };
 
-  const pendingReflections = () => D.responses.filter(r => r.kind === "reflection" && !D.feedback.some(f => f.response_id === r.id));
+  const pendingReflections = () => D.responses.filter(r => r.kind === "reflection" && !r.feedback_skipped_at && !D.feedback.some(f => f.response_id === r.id));
 
   // ---------- auth ----------
   function renderLogin(note) {
@@ -141,10 +141,19 @@
     return box;
   }
 
-  function replyBox(resp) {
+  async function setSkip(r, skip) {
+    const { error } = await sb.rpc("admin_skip_feedback", { p_id: r.id, p_skip: skip });
+    if (error) { alert("Couldn't update: " + error.message); return; }
+    await refresh();
+  }
+
+  function replyBox(resp, canSkip) {
     const ta = el("textarea", { "aria-label": "Your feedback" });
     const out = el("div");
-    return el("div", {}, ta, el("div", { class: "actions" }, el("button", { class: "btn primary", onclick: async () => {
+    return el("div", {}, ta, el("div", { class: "actions" },
+      canSkip ? el("button", { class: "btn", onclick: () => setSkip(resp, true) }, "No feedback needed") : null,
+      el("span", { class: "spacer" }),
+      el("button", { class: "btn primary", onclick: async () => {
       if (!ta.value.trim()) { out.replaceChildren(msg("Write your feedback first.")); return; }
       const { error } = await sb.from("feedback").insert({ response_id: resp.id, body: ta.value.trim() });
       if (error) { out.replaceChildren(msg("Couldn't save: " + error.message)); return; }
@@ -162,15 +171,18 @@
       el("div", { class: "answer" }, (r.answer && r.answer.text) || (r.answer && r.answer.files ? "" : answerText(r))),
       r.answer && r.answer.files && r.answer.files.length ? fileLinks(r.answer.files) : null,
       ...fbs.map(f => el("div", { class: "feedback" }, el("div", { class: "who" }, "Feedback · " + fmt(f.created_at) + (f.read_at ? " · read" : " · not read yet")), el("div", { class: "answer" }, f.body))),
-      r.kind === "reflection" || fbs.length === 0 ? replyBox(r) : null);
+      r.feedback_skipped_at && !fbs.length
+        ? el("div", { class: "actions" }, el("span", { class: "small muted" }, "Hidden · no feedback needed (" + fmt(r.feedback_skipped_at) + ")"),
+            el("button", { class: "btn link small", onclick: () => setSkip(r, false) }, "Show in inbox again"))
+        : (r.kind === "reflection" || fbs.length === 0 ? replyBox(r, fbs.length === 0) : null));
   }
 
   function renderInbox() {
     const list = showAnswered ? D.responses.filter(r => r.kind === "reflection") : pendingReflections();
-    const toggle = el("label", { class: "check" }, el("input", { type: "checkbox", checked: showAnswered, onchange: e => { showAnswered = e.target.checked; render(); } }), "Show reflections that already have feedback");
+    const toggle = el("label", { class: "check" }, el("input", { type: "checkbox", checked: showAnswered, onchange: e => { showAnswered = e.target.checked; render(); } }), "Also show reflections with feedback or marked “no feedback needed”");
     show(tabs(), toggle,
       list.length ? el("div", { style: "margin-top:14px" }, ...list.map(r => responseItem(r, true)))
-        : el("p", { class: "muted", style: "margin-top:14px" }, showAnswered ? "No reflections yet." : "All reflections have feedback. Nice work."));
+        : el("p", { class: "muted", style: "margin-top:14px" }, showAnswered ? "No reflections yet." : "Nothing waiting. Every reflection has feedback or is marked “no feedback needed”."));
   }
 
   function renderDetail() {

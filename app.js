@@ -347,7 +347,7 @@
     let uploader = null;
     if (step.kind === "field_mission") {
       const list = el("ul", { class: "files" });
-      const drawFiles = () => list.replaceChildren(...files.map((f, i) => el("li", {}, "📎 " + f.name, " ",
+      const drawFiles = () => list.replaceChildren(...files.map((f, i) => el("li", {}, fileLink(f), " ",
         el("button", { class: "btn link small", onclick: async () => {
           await sb.storage.from("field-missions").remove([f.path]);
           files.splice(i, 1); drawFiles();
@@ -416,6 +416,18 @@
     }
   }
 
+  function fileLink(f) {
+    const a = el("a", { href: "#", class: "file-link" }, "📎 " + f.name);
+    a.addEventListener("click", async ev => {
+      ev.preventDefault();
+      const win = window.open("", "_blank");
+      const { data, error } = await sb.storage.from("field-missions").createSignedUrl(f.path, 600);
+      if (error) { if (win) win.close(); alert("Couldn't open the file: " + error.message); return; }
+      if (win) win.location = data.signedUrl; else location.href = data.signedUrl;
+    });
+    return a;
+  }
+
   // ---------- answer kit ----------
   const KIT_LABELS = {
     "1.4": "Your institution: policy, AI rules and student support",
@@ -459,7 +471,7 @@
         el("h3", {}, KIT_LABELS[u.id] || st.title),
         el("p", { class: "small muted", style: "margin-top:-4px" }, "From " + u.id + " " + u.title),
         r && r.answer.text ? el("div", { class: "kit-text" }, linkify(r.answer.text)) : el("p", { class: "muted" }, "Not filled in yet."),
-        r && r.answer.files && r.answer.files.length ? el("p", { class: "small" }, "📎 " + r.answer.files.map(f => f.name).join(", ")) : null,
+        r && r.answer.files && r.answer.files.length ? el("p", { class: "small" }, ...r.answer.files.flatMap(f => [fileLink(f), " "])) : null,
         el("div", { class: "actions" }, el("button", { class: "btn" + (r ? "" : " primary"), onclick: () => go("#/unit/" + u.id + "/" + i) }, r ? "Edit" : "Fill in now"))));
     }
     nodes.push(el("section", { class: "panel" },
@@ -520,6 +532,7 @@
               el("div", { class: "sum-label" }, st.type === "reflection" ? "Reflection question" : st.title), mdBlock(st.md),
               el("div", { class: "sum-label" }, "Your answer"),
               el("div", { class: "md" }, el("blockquote", {}, el("p", { style: "white-space:pre-wrap" }, r.answer.text || ""))),
+              r.answer.files && r.answer.files.length ? el("p", { class: "small" }, ...r.answer.files.flatMap(f => [fileLink(f), " "])) : null,
               st.reveal ? el("div", {}, el("div", { class: "sum-label" }, "Suggested answer"), mdBlock(st.reveal)) : null,
               cmp ? el("div", {}, el("div", { class: "sum-label" }, "Example to compare"), mdBlock(cmp.md)) : null,
               ...fbs.map(f => el("div", { class: "feedback" }, el("div", { class: "who" }, "Feedback from ENAI · " + fmtDate(f.created_at)), mdBlock(f.body))),

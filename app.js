@@ -95,6 +95,7 @@
       el("h2", {}, "Sign in"),
       el("p", {}, "Enter your email address. We'll send you a sign-in link, so there's no password to remember. Your progress is saved, and you can continue any time."),
       el("label", { class: "field", for: "email" }, "Email address"), email,
+      el("p", { class: "small muted", style: "margin:8px 0 0" }, "Always use the same email address. Your progress is saved to it, and a different address starts a new, empty account."),
       el("div", { class: "actions" }, el("button", { class: "btn primary", type: "submit" }, "Send sign-in link")),
       out
     );

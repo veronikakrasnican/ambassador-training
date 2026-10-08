@@ -121,7 +121,7 @@
       el("td", {}, s.badge_awarded_at ? fmt(s.badge_awarded_at) : "–")));
 
     show(tabs(), stats,
-      el("div", { class: "filters" }, search, el("button", { class: "btn", onclick: exportCsv }, "Download CSV")),
+      el("div", { class: "filters" }, search, el("button", { class: "btn primary", onclick: exportExcel }, "Download full results (Excel)"), el("button", { class: "btn", onclick: exportCsv }, "Download progress (CSV)")),
       D.students.length ? el("div", { class: "scroll" }, el("table", { class: "grid" }, el("thead", {}, head), el("tbody", {}, ...body)))
         : el("p", { class: "muted" }, "No ambassadors have signed up yet."));
   }
@@ -168,6 +168,7 @@
       el("section", { class: "panel", style: "margin-top:10px" },
         el("h2", { style: "margin-top:0" }, s.full_name || s.email),
         el("p", {}, [s.email, s.institution, s.country, levelLabel(s.study_level)].filter(Boolean).join(" · ")),
+        accountTools(s),
         el("p", { class: "small muted" }, "Joined " + fmt(s.joined_at) + " · last active " + fmt(s.last_active_at) + " · " + st.pct + "% complete" + (s.badge_awarded_at ? " · badge " + fmt(s.badge_awarded_at) : "")),
         ...D.modules.map(m => el("div", { style: "margin-top:10px" },
           el("b", {}, "Module " + m.id + ": " + m.title), el("div", { class: "small" },
@@ -239,6 +240,93 @@
         el("h2", {}, rs[0].kind === "reflection" ? "Reflection" : promptTitle(answersUnit, rs[0].prompt_key)),
         ...rs.map(r => responseItem(r, true)))),
       resps.length ? null : el("p", { class: "muted" }, "No written answers for this unit yet."));
+  }
+
+  function accountTools(s) {
+    const out = el("div");
+    const appUrl = location.origin + location.pathname.replace(/admin\.html$/, "");
+    const others = D.students.filter(x => x.id !== s.id);
+    const target = el("select", {}, el("option", { value: "" }, "Move this progress to…"),
+      ...others.map(x => el("option", { value: x.id }, (x.full_name || x.email) + " · " + x.email)));
+    return el("div", { class: "item", style: "margin:12px 0" },
+      el("div", { class: "meta" }, "Account tools"),
+      el("div", { class: "actions", style: "margin-top:4px" },
+        el("button", { class: "btn", onclick: async () => {
+          out.replaceChildren();
+          const { error } = await sb.auth.signInWithOtp({ email: s.email, options: { emailRedirectTo: appUrl, shouldCreateUser: false } });
+          out.append(error ? msg("Couldn't send: " + error.message) : msg("Sign-in link sent to " + s.email + ".", "ok"));
+        } }, "Send sign-in link"),
+        el("button", { class: "btn", style: "color:var(--warn);border-color:var(--warn)", onclick: async () => {
+          if (!confirm("Delete " + (s.full_name || s.email) + " and ALL their progress, answers and feedback? This can't be undone.")) return;
+          const { error } = await sb.rpc("admin_delete_student", { p_id: s.id });
+          if (error) { out.replaceChildren(msg("Couldn't delete: " + error.message)); return; }
+          view = "overview"; detailId = null; await refresh();
+        } }, "Delete ambassador")),
+      others.length ? el("div", { class: "filters", style: "margin:12px 0 0" }, target,
+        el("button", { class: "btn", onclick: async () => {
+          if (!target.value) { out.replaceChildren(msg("Choose the account to move the progress to.")); return; }
+          const t = D.students.find(x => x.id === target.value);
+          if (!confirm("Move all progress and answers from " + s.email + " to " + t.email + ", then delete " + s.email + "?")) return;
+          const { error } = await sb.rpc("admin_merge_students", { p_from: s.id, p_to: t.id });
+          if (error) { out.replaceChildren(msg("Couldn't merge: " + error.message)); return; }
+          detailId = t.id; await refresh();
+        } }, "Merge accounts")) : null,
+      el("p", { class: "small muted", style: "margin:10px 0 0" }, "Use “Merge accounts” when someone signed in with a different email and lost their progress. Their progress moves to the chosen account and this one is deleted."),
+      out);
+  }
+
+  function exportExcel() {
+    if (!window.XLSX) { alert("The Excel library didn't load. Check your internet connection and try again."); return; }
+    const stud = id => D.students.find(s => s.id === id) || {};
+    const unitName = id => { const u = D.units.find(x => x.id === id); return u ? (u.kind === "unit" ? u.id + " " : "") + u.title : id; };
+    const moduleOf = id => { const u = D.units.find(x => x.id === id); return u ? u.module_id : ""; };
+    const order = id => { const u = D.units.find(x => x.id === id); return u ? u.sort_order : 9999; };
+
+    const progress = D.students.map(s => {
+      const st = studentStats(s);
+      const row = { Name: s.full_name, Email: s.email, Institution: s.institution, Country: s.country, Level: levelLabel(s.study_level), Joined: fmt(s.joined_at) };
+      st.perModule.forEach(p => row["Module " + p.id] = p.done + "/" + p.total);
+      Object.assign(row, { "Total %": st.pct, "Last active": fmt(s.last_active_at), Badge: s.badge_awarded_at ? fmt(s.badge_awarded_at) : "" });
+      return row;
+    });
+
+    const decisions = [...D.decisions].sort((a, b) => (stud(a.student_id).full_name || "").localeCompare(stud(b.student_id).full_name || "") || order(a.unit_id) - order(b.unit_id) || a.case_no - b.case_no).map(d => {
+      const st = decisionSteps(d.unit_id).find(x => x.caseNo === d.case_no);
+      return {
+        Name: stud(d.student_id).full_name, Email: stud(d.student_id).email, Module: moduleOf(d.unit_id), Unit: unitName(d.unit_id), Case: d.case_no,
+        Question: st ? st.md.replace(/\s+/g, " ").trim() : "",
+        "First choice": optLabel(d.unit_id, d.case_no, d.first_choice),
+        "After debrief": d.second_choice ? optLabel(d.unit_id, d.case_no, d.second_choice) : "",
+        Changed: d.second_choice ? (d.second_choice !== d.first_choice ? "Yes" : "No") : "",
+        Answered: fmt(d.created_at)
+      };
+    });
+
+    const answers = [...D.responses].sort((a, b) => (stud(a.student_id).full_name || "").localeCompare(stud(b.student_id).full_name || "") || order(a.unit_id) - order(b.unit_id)).map(r => {
+      const fbs = D.feedback.filter(f => f.response_id === r.id);
+      const step = C[r.unit_id] && (r.kind === "reflection" ? C[r.unit_id].steps.find(x => x.type === "reflection") : C[r.unit_id].steps.find(x => x.key === r.prompt_key));
+      return {
+        Name: stud(r.student_id).full_name, Email: stud(r.student_id).email, Module: moduleOf(r.unit_id), Unit: unitName(r.unit_id),
+        Type: { reflection: "Reflection", your_turn: "Your turn", quiz: "Quiz", field_mission: "Field mission" }[r.kind] || r.kind,
+        Task: r.kind === "reflection" ? "Reflection" : promptTitle(r.unit_id, r.prompt_key),
+        Question: step ? step.md.replace(/\s+/g, " ").trim().slice(0, 32000) : "",
+        Answer: answerText(r).slice(0, 32000),
+        Feedback: fbs.map(f => f.body).join("\n---\n"),
+        "Feedback read": fbs.length ? (fbs.every(f => f.read_at) ? "Yes" : "No") : "",
+        Saved: fmt(r.updated_at || r.created_at)
+      };
+    });
+
+    const wb = XLSX.utils.book_new();
+    const add = (rows, name, widths) => {
+      const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ Info: "No data yet" }]);
+      ws["!cols"] = widths.map(w => ({ wch: w }));
+      XLSX.utils.book_append_sheet(wb, ws, name);
+    };
+    add(progress, "Progress", [24, 32, 26, 14, 12, 14, 9, 9, 9, 9, 9, 9, 9, 9, 14, 14]);
+    add(decisions, "Decisions", [24, 32, 8, 34, 6, 60, 40, 40, 9, 14]);
+    add(answers, "Answers", [24, 32, 8, 34, 13, 34, 60, 70, 50, 13, 14]);
+    XLSX.writeFile(wb, "ambassador-training-results-" + new Date().toISOString().slice(0, 10) + ".xlsx");
   }
 
   function exportCsv() {

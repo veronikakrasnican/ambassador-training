@@ -178,6 +178,7 @@
         next ? el("button", { class: "btn primary", onclick: () => go("#/unit/" + next.id) },
           unitState(next.id) === "in_progress" ? "Continue " + next.id + " " + next.title : (done ? "Start " : "Begin with ") + next.id + " " + next.title) : null,
         done || Object.keys(S.responses).length ? el("button", { class: "btn", onclick: () => go("#/summary") }, "My summary") : null,
+        el("button", { class: "btn", onclick: () => go("#/kit") }, "My answer kit"),
         S.student.badge_awarded_at ? el("button", { class: "btn", onclick: () => go("#/badge") }, "View your badge") : null)
     ));
 
@@ -332,19 +333,49 @@
     const out = el("div");
     const reveal = step.reveal ? mdBlock(step.reveal, "reveal") : null;
     if (reveal && !prev) reveal.classList.add("hidden");
+    let files = prev && prev.answer.files ? prev.answer.files.slice() : [];
     const saveBtn = el("button", { class: "btn", onclick: async () => {
-      if (!ta.value.trim()) { out.replaceChildren(msg("Write your answer first.")); return; }
-      const err = await saveResponse(u.id, step.kind, step.key, { text: ta.value.trim() });
+      if (!ta.value.trim() && !files.length) { out.replaceChildren(msg("Write your answer first.")); return; }
+      const err = await saveResponse(u.id, step.kind, step.key, step.kind === "field_mission" ? { text: ta.value.trim(), files } : { text: ta.value.trim() });
       out.replaceChildren(err ? msg("Your answer couldn't be saved: " + err.message) : msg("Saved.", "ok"));
       if (!err) { nextBtn.disabled = false; if (reveal) reveal.classList.remove("hidden"); }
     } }, step.reveal && !prev ? "Save and show answers" : "Save answer");
     card.append(el("h3", {}, step.title), mdBlock(step.md));
-    if (step.kind === "field_mission" && CFG.FIELD_MISSION_FORM_URL) {
-      card.append(el("p", { class: "small" }, "To share a screenshot, use the ", el("a", { href: CFG.FIELD_MISSION_FORM_URL, target: "_blank", rel: "noopener" }, "upload form"), ". Remove names and personal details first."));
-    }
+
     if (step.kind === "field_mission") card.append(el("p", { class: "small muted" }, "You can save what you have now and come back to add more later."));
     if (step.hasExample) card.append(el("p", { class: "small muted" }, "After you save, the next page shows an example to compare with."));
-    card.append(ta, el("div", { class: "actions" }, saveBtn), out);
+    let uploader = null;
+    if (step.kind === "field_mission") {
+      const list = el("ul", { class: "files" });
+      const drawFiles = () => list.replaceChildren(...files.map((f, i) => el("li", {}, "📎 " + f.name, " ",
+        el("button", { class: "btn link small", onclick: async () => {
+          await sb.storage.from("field-missions").remove([f.path]);
+          files.splice(i, 1); drawFiles();
+          await saveResponse(u.id, step.kind, step.key, { text: ta.value.trim(), files });
+        } }, "Remove"))));
+      const input = el("input", { type: "file", accept: "image/png,image/jpeg,image/webp,image/gif,application/pdf", id: "fm-file" });
+      input.addEventListener("change", async () => {
+        const f = input.files[0]; if (!f) return;
+        if (f.size > 5 * 1024 * 1024) { out.replaceChildren(msg("The file is too large. The limit is 5 MB.")); input.value = ""; return; }
+        out.replaceChildren(msg("Uploading…", "ok"));
+        const safe = f.name.replace(/[^A-Za-z0-9._-]+/g, "_").slice(-80);
+        const path = S.user.id + "/" + u.id + "-" + step.key + "-" + Date.now() + "-" + safe;
+        const { error } = await sb.storage.from("field-missions").upload(path, f, { contentType: f.type });
+        input.value = "";
+        if (error) { out.replaceChildren(msg("Upload failed: " + error.message)); return; }
+        files.push({ path, name: f.name });
+        drawFiles();
+        const err = await saveResponse(u.id, step.kind, step.key, { text: ta.value.trim(), files });
+        out.replaceChildren(err ? msg("Uploaded, but couldn't save: " + err.message) : msg("File uploaded and saved.", "ok"));
+        if (!err) nextBtn.disabled = false;
+      });
+      drawFiles();
+      uploader = el("div", { class: "upload" },
+        el("label", { class: "field", for: "fm-file" }, "Add a screenshot or PDF (optional, max 5 MB)"),
+        el("p", { class: "small muted", style: "margin:0 0 6px" }, "Remove names and personal details before uploading. Only you and ENAI can see your files."),
+        input, list);
+    }
+    card.append(ta, uploader, el("div", { class: "actions" }, saveBtn), out);
     if (reveal) card.append(reveal);
     appendFeedback(card, prev);
     if (!prev && step.kind !== "field_mission") nextBtn.disabled = true;
@@ -383,6 +414,64 @@
       card.append(el("div", { class: "feedback" }, el("div", { class: "who" }, "Feedback from ENAI · " + fmtDate(f.created_at)), mdBlock(f.body)));
       if (!f.read_at) sb.from("feedback").update({ read_at: new Date().toISOString() }).eq("id", f.id).then(() => { f.read_at = new Date().toISOString(); });
     }
+  }
+
+  // ---------- answer kit ----------
+  const KIT_LABELS = {
+    "1.4": "Your institution: policy, AI rules and student support",
+    "3.3": "Reusing your own work",
+    "3.4": "Writing and referencing support",
+    "6.2": "Wellbeing and emergency support",
+    "7.3": "How integrity cases work, plus national guidance"
+  };
+  function linkify(text) {
+    const frag = document.createDocumentFragment();
+    const re = /(https?:\/\/[^\s)]+|www\.[^\s)]+|[\w.+-]+@[\w-]+\.[\w.-]+)/g;
+    let last = 0, m;
+    while ((m = re.exec(text))) {
+      if (m.index > last) frag.append(text.slice(last, m.index));
+      const t = m[0];
+      const href = t.includes("@") && !t.startsWith("http") ? "mailto:" + t : (t.startsWith("http") ? t : "https://" + t);
+      frag.append(el("a", { href, target: "_blank", rel: "noopener" }, t));
+      last = m.index + t.length;
+    }
+    if (last < text.length) frag.append(text.slice(last));
+    return frag;
+  }
+  function kitSteps() {
+    const out = [];
+    for (const u of S.units) u.steps.forEach((st, i) => {
+      if (st.type === "task" && (/answer kit/i.test(st.title + " " + st.md) || u.id === "3.4")) out.push({ u, st, i });
+    });
+    return out;
+  }
+  function renderKit() {
+    const items = kitSteps();
+    const filled = items.filter(x => S.responses[respKey(x.u.id, x.st.kind, x.st.key)]).length;
+    const nodes = [el("div", { class: "unit-head" },
+      el("p", { class: "kicker" }, el("button", { class: "btn link", onclick: () => go("#/") }, "All modules")),
+      el("h2", {}, "My answer kit"),
+      el("p", { class: "intro" }, "Everything you've collected during the training, in one place. Keep it open when a student asks you something: most questions can be answered by pointing to the right page or person."),
+      el("p", { class: "small muted" }, filled + " of " + items.length + " sections filled in"))];
+    for (const { u, st, i } of items) {
+      const r = S.responses[respKey(u.id, st.kind, st.key)];
+      nodes.push(el("section", { class: "panel" },
+        el("h3", {}, KIT_LABELS[u.id] || st.title),
+        el("p", { class: "small muted", style: "margin-top:-4px" }, "From " + u.id + " " + u.title),
+        r && r.answer.text ? el("div", { class: "kit-text" }, linkify(r.answer.text)) : el("p", { class: "muted" }, "Not filled in yet."),
+        r && r.answer.files && r.answer.files.length ? el("p", { class: "small" }, "📎 " + r.answer.files.map(f => f.name).join(", ")) : null,
+        el("div", { class: "actions" }, el("button", { class: "btn" + (r ? "" : " primary"), onclick: () => go("#/unit/" + u.id + "/" + i) }, r ? "Edit" : "Fill in now"))));
+    }
+    nodes.push(el("section", { class: "panel" },
+      el("h3", {}, "International documents"),
+      el("ul", {},
+        el("li", {}, el("a", { href: "https://allea.org/code-of-conduct/", target: "_blank", rel: "noopener" }, "The European Code of Conduct for Research Integrity"), " (ALLEA)"),
+        el("li", {}, el("a", { href: "https://www.academicintegrity.eu/wp/dubai-accord-on-academic-integrity-in-the-age-of-artificial-intelligence/", target: "_blank", rel: "noopener" }, "The Dubai Accord on Academic Integrity in the Age of AI")),
+        el("li", {}, el("a", { href: "https://www.academicintegrity.eu", target: "_blank", rel: "noopener" }, "ENAI resources and materials")))),
+      el("section", { class: "panel" },
+        el("h3", {}, "Need backup?"),
+        el("p", {}, "You don't have to know everything. Contact ENAI at ", el("a", { href: "mailto:" + CFG.SUPPORT_EMAIL }, CFG.SUPPORT_EMAIL), ".")));
+    show(...nodes);
   }
 
   // ---------- summary ----------
@@ -493,6 +582,7 @@
     if (parts[0] === "unit" && parts[1]) return renderUnit(decodeURIComponent(parts[1]), parts[2] != null ? Number(parts[2]) : null);
     if (parts[0] === "badge") return renderBadge();
     if (parts[0] === "summary") return renderSummary();
+    if (parts[0] === "kit") return renderKit();
     renderHome();
   }
 

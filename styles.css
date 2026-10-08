@@ -149,3 +149,9 @@ label.field { display: block; margin: 14px 0 6px; font-weight: 600; font-size: 1
 .sum-options li.mine { border-color: var(--accent); background: var(--accent-soft); }
 .sum-options .tag { display: inline-block; margin-left: 8px; font-size: 12px; font-weight: 600; color: var(--accent); }
 .takeaway p { font-size: 20px; }
+
+.kit-text { white-space: pre-wrap; padding: 10px 14px; border-left: 4px solid var(--sage); background: var(--accent-soft); border-radius: 0 10px 10px 0; }
+.upload { margin: 14px 0 4px; padding: 12px 14px; border: 1px dashed var(--sage); border-radius: 12px; }
+.upload input[type=file] { font: inherit; font-size: 14px; }
+.files { list-style: none; padding: 0; margin: 8px 0 0; font-size: 14px; }
+.files li { margin: 4px 0; }

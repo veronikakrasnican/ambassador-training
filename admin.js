@@ -126,6 +126,21 @@
         : el("p", { class: "muted" }, "No ambassadors have signed up yet."));
   }
 
+  function fileLinks(files) {
+    const box = el("div", { class: "small", style: "margin:-4px 0 12px" });
+    files.forEach(f => {
+      const a = el("a", { href: "#", target: "_blank", rel: "noopener" }, "📎 " + f.name);
+      a.addEventListener("click", async ev => {
+        ev.preventDefault();
+        const { data, error } = await sb.storage.from("field-missions").createSignedUrl(f.path, 600);
+        if (error) { alert("Couldn't open the file: " + error.message); return; }
+        window.open(data.signedUrl, "_blank", "noopener");
+      });
+      box.append(a, " ");
+    });
+    return box;
+  }
+
   function replyBox(resp) {
     const ta = el("textarea", { "aria-label": "Your feedback" });
     const out = el("div");
@@ -144,7 +159,8 @@
     const kindLabel = { reflection: "Reflection", your_turn: "Your turn", quiz: "Quiz", field_mission: "Field mission" }[r.kind] || r.kind;
     return el("div", { class: "item" },
       el("div", { class: "meta" }, (withStudent ? (st.full_name || st.email) + " · " + (st.institution || "") + " · " : "") + (r.kind === "reflection" ? "Reflection" : promptTitle(r.unit_id, r.prompt_key)) + " · " + (unit.kind === "unit" ? unit.id + " " : "") + unit.title + " · " + fmt(r.updated_at || r.created_at)),
-      el("div", { class: "answer" }, answerText(r)),
+      el("div", { class: "answer" }, (r.answer && r.answer.text) || (r.answer && r.answer.files ? "" : answerText(r))),
+      r.answer && r.answer.files && r.answer.files.length ? fileLinks(r.answer.files) : null,
       ...fbs.map(f => el("div", { class: "feedback" }, el("div", { class: "who" }, "Feedback · " + fmt(f.created_at) + (f.read_at ? " · read" : " · not read yet")), el("div", { class: "answer" }, f.body))),
       r.kind === "reflection" || fbs.length === 0 ? replyBox(r) : null);
   }
@@ -258,6 +274,8 @@
         } }, "Send sign-in link"),
         el("button", { class: "btn", style: "color:var(--warn);border-color:var(--warn)", onclick: async () => {
           if (!confirm("Delete " + (s.full_name || s.email) + " and ALL their progress, answers and feedback? This can't be undone.")) return;
+          const { data: own } = await sb.storage.from("field-missions").list(s.id, { limit: 1000 });
+          if (own && own.length) await sb.storage.from("field-missions").remove(own.map(o => s.id + "/" + o.name));
           const { error } = await sb.rpc("admin_delete_student", { p_id: s.id });
           if (error) { out.replaceChildren(msg("Couldn't delete: " + error.message)); return; }
           view = "overview"; detailId = null; await refresh();
@@ -310,7 +328,8 @@
         Type: { reflection: "Reflection", your_turn: "Your turn", quiz: "Quiz", field_mission: "Field mission" }[r.kind] || r.kind,
         Task: r.kind === "reflection" ? "Reflection" : promptTitle(r.unit_id, r.prompt_key),
         Question: step ? step.md.replace(/\s+/g, " ").trim().slice(0, 32000) : "",
-        Answer: answerText(r).slice(0, 32000),
+        Answer: ((r.answer && r.answer.text) || "").slice(0, 32000),
+        Files: r.answer && r.answer.files ? r.answer.files.map(f => f.name).join(", ") : "",
         Feedback: fbs.map(f => f.body).join("\n---\n"),
         "Feedback read": fbs.length ? (fbs.every(f => f.read_at) ? "Yes" : "No") : "",
         Saved: fmt(r.updated_at || r.created_at)
@@ -325,7 +344,7 @@
     };
     add(progress, "Progress", [24, 32, 26, 14, 12, 14, 9, 9, 9, 9, 9, 9, 9, 9, 14, 14]);
     add(decisions, "Decisions", [24, 32, 8, 34, 6, 60, 40, 40, 9, 14]);
-    add(answers, "Answers", [24, 32, 8, 34, 13, 34, 60, 70, 50, 13, 14]);
+    add(answers, "Answers", [24, 32, 8, 34, 13, 34, 60, 70, 24, 50, 13, 14]);
     XLSX.writeFile(wb, "ambassador-training-results-" + new Date().toISOString().slice(0, 10) + ".xlsx");
   }
 

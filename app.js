@@ -157,32 +157,66 @@
   }
 
   // ---------- onboarding ----------
-  function renderOnboarding() {
-    const f = id => el("input", { type: "text", id, required: true });
-    const name = f("name"), inst = f("inst"), country = f("country");
+  function detailFields(cur = {}) {
+    const f = (id, v) => { const i = el("input", { type: "text", id, required: true, maxlength: 120 }); i.value = v || ""; return i; };
+    const name = f("name", cur.full_name), inst = f("inst", cur.institution), country = f("country", cur.country);
     const level = el("select", { id: "level", required: true },
       el("option", { value: "" }, "Choose one"),
       el("option", { value: "bachelor" }, "Bachelor's"),
       el("option", { value: "master" }, "Master's"),
       el("option", { value: "phd" }, "PhD"),
       el("option", { value: "other" }, "Other"));
+    level.value = cur.study_level || "";
+    const nodes = [
+      el("label", { class: "field", for: "name" }, "Full name"), name,
+      el("p", { class: "small muted", style: "margin:4px 0 0" }, "As you'd like it to appear on your badge."),
+      el("label", { class: "field", for: "inst" }, "Institution"), inst,
+      el("p", { class: "small muted", style: "margin:4px 0 0" }, "Your university or college, written out in full. It also appears on your badge."),
+      el("label", { class: "field", for: "country" }, "Country"), country,
+      el("label", { class: "field", for: "level" }, "Level of study"), level];
+    const values = () => ({ full_name: name.value.trim(), institution: inst.value.trim(), country: country.value.trim(), study_level: level.value });
+    return { nodes, values };
+  }
+
+  function renderProfile() {
+    const d = detailFields(S.student);
+    const out = el("div");
+    const form = el("form", { onsubmit: async e => {
+      e.preventDefault(); out.replaceChildren();
+      const v = d.values();
+      const { data, error } = await sb.from("students").update(v).eq("id", S.user.id).select().single();
+      if (error) { out.append(msg("We couldn't save your details: " + error.message)); return; }
+      S.student = data; renderWho();
+      out.append(msg("Saved. Your badge now shows the new details.", "ok"));
+    } },
+      el("h2", {}, "My details"),
+      ...d.nodes,
+      el("label", { class: "field" }, "Email address"),
+      el("p", { style: "margin:4px 0 0" }, S.user.email),
+      el("p", { class: "small muted", style: "margin:4px 0 0" }, "Your progress is linked to this address, so it can't be changed here. If you need to change it, write to ",
+        el("a", { href: "mailto:" + CFG.SUPPORT_EMAIL }, CFG.SUPPORT_EMAIL), "."),
+      el("div", { class: "actions" }, el("button", { class: "btn primary", type: "submit" }, "Save changes"),
+        el("button", { class: "btn", type: "button", onclick: () => go("#/") }, "Back to modules")),
+      out);
+    show(el("div", { class: "unit-head" }, el("p", { class: "kicker" }, el("button", { class: "btn link", onclick: () => go("#/") }, "All modules"))),
+      el("section", { class: "panel" }, form));
+  }
+
+  function renderOnboarding() {
+    const d = detailFields();
     const consent = el("input", { type: "checkbox", id: "consent", required: true });
     const out = el("div");
     const form = el("form", { onsubmit: async e => {
       e.preventDefault(); out.replaceChildren();
       const { error } = await sb.from("students").insert({
-        id: S.user.id, email: S.user.email, full_name: name.value.trim(), institution: inst.value.trim(),
-        country: country.value.trim(), study_level: level.value, consent_at: new Date().toISOString()
+        id: S.user.id, email: S.user.email, ...d.values(), consent_at: new Date().toISOString()
       });
       if (error) { out.append(msg("We couldn't save your details: " + error.message)); return; }
       await boot();
     } },
       el("h2", {}, "Welcome, new ambassador"),
       el("p", {}, "Tell us a little about yourself. This helps ENAI give you useful feedback."),
-      el("label", { class: "field", for: "name" }, "Full name"), name,
-      el("label", { class: "field", for: "inst" }, "Institution"), inst,
-      el("label", { class: "field", for: "country" }, "Country"), country,
-      el("label", { class: "field", for: "level" }, "Level of study"), level,
+      ...d.nodes,
       el("div", { class: "check" }, consent,
         el("label", { for: "consent" }, "I agree that ENAI stores my details, progress and answers to run this training and give me feedback. My answers to decisions are shown to other ambassadors only as anonymous percentages. I can ask for my data to be deleted at any time by writing to ",
           el("a", { href: "mailto:" + CFG.SUPPORT_EMAIL }, CFG.SUPPORT_EMAIL), ". I have read the ",
@@ -675,7 +709,16 @@
     return logoDataUrl;
   }
 
-  function badgeSvg(name, date, logo) {
+  function badgeSvg(name, inst, date, logo) {
+    const fs = (t, max, w) => Math.max(9, Math.min(max, Math.floor(w / (0.56 * Math.max(1, String(t).length)))));
+    // Long institution names wrap onto two lines, split at the space nearest the middle.
+    let instLines = inst ? [inst] : [];
+    if (inst && inst.length > 38 && inst.includes(" ")) {
+      const mid = inst.length / 2; let cut = -1;
+      for (let i = 0; i < inst.length; i++) if (inst[i] === " " && (cut < 0 || Math.abs(i - mid) < Math.abs(cut - mid))) cut = i;
+      instLines = [inst.slice(0, cut).replace(/,$/, ","), inst.slice(cut + 1)];
+    }
+    const instSize = instLines.length ? Math.min(...instLines.map(l => fs(l, 14, 250))) : 14;
     const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
     return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 400 400" role="img" aria-label="ENAI Student Ambassador badge for ${esc(name)}">
   <circle cx="200" cy="200" r="192" fill="#FFFCF6" stroke="#3D7D83" stroke-width="9"/>
@@ -683,13 +726,14 @@
   <image href="${logo}" xlink:href="${logo}" x="110" y="26" width="180" height="180"/>
   <text x="200" y="232" text-anchor="middle" font-family="Zilla Slab, Georgia, serif" font-size="22" font-weight="700" fill="#464847">Core Training Completed</text>
   <path d="M140 246 C 175 238, 225 252, 260 242" fill="none" stroke="#54A4AC" stroke-width="4" stroke-linecap="round"/>
-  <text x="200" y="285" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="600" fill="#3D7D83">${esc(name)}</text>
-  <text x="200" y="311" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="14" fill="#7E817F">${esc(date)}</text>
-  <text x="200" y="343" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="12" letter-spacing="0.5" fill="#7E817F">academicintegrity.eu</text>
+  <text x="200" y="280" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="${fs(name, 20, 290)}" font-weight="600" fill="#3D7D83">${esc(name)}</text>
+  ${instLines.map((l, i) => `<text x="200" y="${302 + i * 16}" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="${instSize}" fill="#464847">${esc(l)}</text>`).join("")}
+  <text x="200" y="${inst ? 322 + (instLines.length - 1) * 14 : 311}" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="13" fill="#7E817F">${esc(date)}</text>
+  <text x="200" y="${instLines.length > 1 ? 356 : 349}" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="12" letter-spacing="0.5" fill="#7E817F">academicintegrity.eu</text>
 </svg>`;
   }
 
-  async function socialImage(name, date) {
+  async function socialImage(name, inst, date) {
     try { await Promise.all([document.fonts.load('700 64px "Zilla Slab"'), document.fonts.load('600 40px "Inter"'), document.fonts.load('400 28px "Inter"')]); } catch (e) {}
     const W = 1200, H = 627, c = document.createElement("canvas");
     c.width = W; c.height = H;
@@ -708,11 +752,12 @@
     g.strokeStyle = "#54A4AC"; g.lineWidth = 7; g.lineCap = "round";
     g.beginPath(); g.moveTo(x + 4, 345); g.bezierCurveTo(x + 120, 330, x + 260, 360, x + 420, 338); g.stroke();
     g.fillStyle = "#3D7D83"; fit(name, "600", 40, '"Inter", Arial, sans-serif', 660);
-    g.fillText(name, x, 420);
+    g.fillText(name, x, 410);
+    if (inst) { g.fillStyle = "#464847"; fit(inst, "400", 28, '"Inter", Arial, sans-serif', 660); g.fillText(inst, x, 450); }
     g.fillStyle = "#7E817F"; fit(date + "  ·  European Network for Academic Integrity", "400", 24, '"Inter", Arial, sans-serif', 660);
-    g.fillText(date + "  ·  European Network for Academic Integrity", x, 465);
+    g.fillText(date + "  ·  European Network for Academic Integrity", x, inst ? 492 : 465);
     g.font = '400 24px "Inter", Arial, sans-serif';
-    g.fillText("academicintegrity.eu", x, 505);
+    g.fillText("academicintegrity.eu", x, inst ? 530 : 505);
     g.fillStyle = "#A0C8C4"; g.fillRect(0, H - 14, W, 14);
     return new Promise(res => c.toBlob(res, "image/png"));
   }
@@ -727,7 +772,8 @@
     const name = S.student.full_name || S.user.email;
     const date = fmtDate(S.student.badge_awarded_at);
     show(el("p", { class: "muted" }, "Preparing your badge…"));
-    const svg = badgeSvg(name, date, await getLogo());
+    const inst = S.student.institution || "";
+    const svg = badgeSvg(name, inst, date, await getLogo());
     const postText = "I'm proud to share that I've completed the ENAI Student Ambassador Training! 🎓\n\n" +
       "Through a series of real case files I explored academic integrity in practice: grey zones, learning with AI, contract cheating, why students cut corners, and how integrity procedures work. " +
       "As an ENAI Student Ambassador, I'm here to support fellow students with honest, practical answers.\n\n" +
@@ -737,7 +783,7 @@
     ta.value = postText;
     const out = el("div");
     const preview = el("img", { alt: "Image for social media", style: "width:100%;border-radius:12px;border:1px solid var(--line);margin:6px 0 4px" });
-    socialImage(name, date).then(blob => { preview.src = URL.createObjectURL(blob); preview._blob = blob; });
+    socialImage(name, inst, date).then(blob => { preview.src = URL.createObjectURL(blob); preview._blob = blob; });
 
     show(
       el("section", { class: "panel badge-wrap" },
@@ -747,14 +793,15 @@
         el("div", { class: "actions", style: "justify-content:center" },
           el("button", { class: "btn primary", onclick: () => download(new Blob([svg], { type: "image/svg+xml" }), "ENAI-Ambassador-badge.svg") }, "Download badge"),
           el("button", { class: "btn", onclick: () => go("#/kit") }, "My answer kit"),
-          el("button", { class: "btn", onclick: () => go("#/") }, "Back to modules"))),
+          el("button", { class: "btn", onclick: () => go("#/") }, "Back to modules")),
+        el("p", { class: "small muted" }, "Is your name or institution wrong? ", el("a", { href: "#/profile" }, "Edit your details"), ", then come back here.")),
       el("section", { class: "panel" },
         el("h2", { style: "margin-top:0" }, "Share it on LinkedIn"),
         el("p", {}, "Want to let others know? Here's a ready-made image and post. Sharing is completely optional."),
         preview,
         el("ol", { class: "share-steps" },
           el("li", {}, el("button", { class: "btn", onclick: async () => {
-            const blob = preview._blob || await socialImage(name, date);
+            const blob = preview._blob || await socialImage(name, inst, date);
             download(blob, "ENAI-Ambassador-LinkedIn.png");
           } }, "Download the image")),
           el("li", {}, "Copy the post text (edit it as you like):", ta,
@@ -775,13 +822,18 @@
     if (parts[0] === "badge") return renderBadge();
     if (parts[0] === "summary") return renderSummary();
     if (parts[0] === "kit") return renderKit();
+    if (parts[0] === "profile") return renderProfile();
     renderHome();
   }
 
   function renderWho() {
     $who.replaceChildren(
       el("div", {}, S.student && S.student.full_name ? S.student.full_name : S.user.email),
-      el("button", { class: "btn link small", onclick: async () => { await sb.auth.signOut(); } }, "Sign out"));
+      S.student && S.student.institution ? el("div", { class: "small" }, S.student.institution) : null,
+      el("div", {},
+        S.student ? el("a", { class: "btn link small", href: "#/profile" }, "My details") : null,
+        S.student ? " · " : null,
+        el("button", { class: "btn link small", onclick: async () => { await sb.auth.signOut(); } }, "Sign out")));
   }
 
   async function boot() {

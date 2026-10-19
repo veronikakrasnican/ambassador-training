@@ -162,12 +162,12 @@ label.field { display: block; margin: 14px 0 6px; font-weight: 600; font-size: 1
 .share-steps textarea { margin-top: 8px; }
 .badge-wrap svg { width: 300px; }
 
-/* true/false statements */
+/* button tasks (true/false, red flags, sorting) */
 .tf { list-style: none; padding: 0; margin: 12px 0; }
 .tf li { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
 .tf li:first-child { border-top: 0; }
 .tf .stmt { flex: 1 1 260px; }
-.tf .choices { display: flex; gap: 6px; }
+.tf .choices { display: flex; flex-wrap: wrap; gap: 6px; }
 .tf .choices .btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--card); }
 .tf .mark { font-size: 14px; font-weight: 600; min-width: 92px; }
 .tf .mark.ok { color: var(--accent); }

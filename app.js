@@ -418,7 +418,7 @@
   }
 
   function renderTask(u, step, card, nextBtn) {
-    if (step.trueFalse) return renderTrueFalse(u, step, card, nextBtn);
+    if (step.choice) return renderChoice(u, step, card, nextBtn);
     const prev = S.responses[respKey(u.id, step.kind, step.key)];
     const isFM = step.kind === "field_mission";
     const ta = el("textarea", { id: "answer", "aria-label": "Your answer" });
@@ -483,7 +483,8 @@
     if (!prev && step.kind !== "field_mission") nextBtn.disabled = true;
   }
 
-  function renderTrueFalse(u, step, card, nextBtn) {
+  function renderChoice(u, step, card, nextBtn) {
+    const C = step.choice;
     const prev = S.responses[respKey(u.id, step.kind, step.key)];
     const picks = Object.assign({}, prev && prev.answer.choices ? prev.answer.choices : {});
     let checked = !!(prev && prev.answer.choices);
@@ -491,29 +492,30 @@
     const reveal = step.reveal ? mdBlock(step.reveal, "reveal") : null;
     if (reveal && !prev) reveal.classList.add("hidden");
     const list = el("ul", { class: "tf" });
+    const allPicked = () => C.items.every(it => picks[it.no]);
     const saveBtn = el("button", { class: "btn", onclick: async () => {
-      if (!step.trueFalse.every(st => picks[st.no])) { out.replaceChildren(msg("Choose True or False for every statement.")); return; }
-      const text = step.trueFalse.map(st => st.no + ". " + st.text + " " + picks[st.no]).join("\n");
+      if (!allPicked()) { out.replaceChildren(msg("Choose an answer for every item.")); return; }
+      const text = C.items.map(it => it.no + ". " + it.text + " → " + picks[it.no]).join("\n");
       const err = await saveResponse(u.id, step.kind, step.key, { text, choices: picks });
       out.replaceChildren(err ? msg("Your answers couldn't be saved: " + err.message) : msg("Saved.", "ok"));
       if (!err) { checked = true; draw(); nextBtn.disabled = false; if (reveal) reveal.classList.remove("hidden"); }
-    } }, "Check my answers");
+    } }, C.graded ? "Check my answers" : "Save and compare");
     function draw() {
-      list.replaceChildren(...step.trueFalse.map(st => {
-        const mine = picks[st.no];
-        const right = checked && mine && st.answer ? mine === st.answer : null;
+      list.replaceChildren(...C.items.map(it => {
+        const mine = picks[it.no];
+        const right = C.graded && checked && mine && it.answer ? mine === it.answer : null;
         return el("li", {},
-          el("span", { class: "stmt" }, st.no + ". " + st.text),
-          el("span", { class: "choices", role: "group", "aria-label": "Statement " + st.no },
-            ...["True", "False"].map(v => el("button", { class: "btn small", type: "button", "aria-pressed": mine === v ? "true" : "false",
-              onclick: () => { picks[st.no] = v; checked = false; out.replaceChildren(); draw(); } }, v))),
-          right == null ? null : el("span", { class: "mark " + (right ? "ok" : "no") }, right ? "✓ Correct" : "✗ It's " + st.answer.toLowerCase()));
+          el("span", { class: "stmt" }, it.no + ". " + it.text),
+          el("span", { class: "choices", role: "group", "aria-label": "Item " + it.no },
+            ...C.options.map(v => el("button", { class: "btn small", type: "button", "aria-pressed": mine === v ? "true" : "false",
+              onclick: () => { picks[it.no] = v; checked = false; out.replaceChildren(); draw(); } }, v))),
+          right == null ? null : el("span", { class: "mark " + (right ? "ok" : "no") }, right ? "✓ Correct" : "✗ " + (C.wrong[it.answer] || it.answer)));
       }));
-      saveBtn.disabled = !step.trueFalse.every(st => picks[st.no]);
+      saveBtn.disabled = !allPicked();
     }
     card.append(el("h3", {}, step.title));
     if (step.md) card.append(mdBlock(step.md));
-    card.append(el("p", { class: "small muted" }, "Choose True or False for each statement, then check your answers."), list,
+    card.append(el("p", { class: "small muted" }, C.graded ? "Choose an answer for each item, then check your answers." : "Choose an answer for each item, then compare with how others see it."), list,
       el("div", { class: "actions" }, saveBtn), out);
     draw();
     if (reveal) card.append(reveal);

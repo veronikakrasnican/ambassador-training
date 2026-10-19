@@ -20,6 +20,20 @@
     return text.trim().split(/\n{2,}/).map(s => s.trim()).filter(Boolean);
   }
 
+  // Which "Your turn" headings become button tasks, matched on the heading text from the Doc.
+  // "answers" reads the correct answers from the **Answer:** paragraph; without it, the task isn't marked right or wrong.
+  const CHOICE_TASKS = [
+    { match: /true or false/i, options: ["True", "False"], wrong: { True: "It's true", False: "It's false" },
+      answers: (reveal) => { const out = {}, re = /(\d+)\s+(?:is|are)\s+(true|false)/gi; let a;
+        while ((a = re.exec(reveal))) out[a[1]] = a[2].toLowerCase() === "true" ? "True" : "False"; return out; } },
+    { match: /red flags/i, options: ["Red flag", "Not a red flag"], wrong: { "Red flag": "It's a red flag", "Not a red flag": "It's not a red flag" },
+      answers: (reveal, items) => { const m = reveal.match(/\*\*Answer:\*\*\s*([^.]*?)\s+are red flags/i); if (!m) return {};
+        const flagged = (m[1].match(/\d+/g) || []); const out = {};
+        items.forEach(it => { out[it.no] = flagged.includes(it.no) ? "Red flag" : "Not a red flag"; }); return out; } },
+    { match: /ok, ask first, or not ok/i, options: ["OK", "Ask first", "Not OK"] },
+    { match: /learning or replacing/i, options: ["Supports learning", "Ask first", "Replaces learning"] }
+  ];
+
   function parseOptions(debrief) {
     const opts = [];
     const re = /^[-*]\s+\*\*([A-D])\.\s*(.+?)\*\*/gm;
@@ -98,21 +112,20 @@
             type: "task", title: s.heading, md: prompt.join("\n\n"), reveal: reveal.join("\n\n"),
             kind: h.includes("field mission") ? "field_mission" : "your_turn", key, hasExample: examples.length > 0
           };
-          // "Your turn: true or false?" with a numbered list becomes one True/False choice per statement.
-          if (/true or false/i.test(h)) {
-            const statements = [];
+          // Sorting tasks with a numbered list get one row of buttons per item instead of a text box.
+          const choice = CHOICE_TASKS.find(c => c.match.test(s.heading));
+          if (choice) {
+            const items = [];
             const rest = [];
             task.md.split("\n").forEach(line => {
               const m = line.match(/^\s*(\d+)\.\s+(.+)$/);
-              if (m) statements.push({ no: m[1], text: m[2].trim() });
+              if (m) items.push({ no: m[1], text: m[2].trim() });
               else rest.push(line);
             });
-            if (statements.length) {
-              const correct = {};
-              const re = /(\d+)\s+(?:is|are)\s+(true|false)/gi;
-              let a;
-              while ((a = re.exec(task.reveal))) correct[a[1]] = a[2].toLowerCase() === "true" ? "True" : "False";
-              task.trueFalse = statements.map(st => ({ ...st, answer: correct[st.no] || null }));
+            if (items.length) {
+              const correct = choice.answers ? choice.answers(task.reveal, items) : {};
+              task.choice = { options: choice.options, wrong: choice.wrong || {}, graded: !!choice.answers,
+                items: items.map(it => ({ ...it, answer: correct[it.no] || null })) };
               task.md = rest.join("\n").trim();
             }
           }

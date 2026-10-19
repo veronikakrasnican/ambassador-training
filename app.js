@@ -34,6 +34,40 @@
   const respKey = (unitId, kind, key) => unitId + "|" + kind + "|" + key;
   const fmtDate = d => new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 
+  // Unsaved drafts are kept in this browser, so text survives a reload or a closed tab.
+  const draftKey = (unitId, key) => "draft|" + S.user.id + "|" + unitId + "|" + key;
+  function getDraft(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function setDraft(k, v) { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch (e) {} }
+  function bindDraft(ta, k, savedText) {
+    const d = getDraft(k);
+    let note = null;
+    if (d != null && d !== savedText) {
+      ta.value = d;
+      note = el("p", { class: "small muted draft-note" }, "We restored text you hadn't saved yet. Save it to keep it.");
+    }
+    ta.addEventListener("input", () => setDraft(k, ta.value === savedText ? "" : ta.value));
+    return note;
+  }
+
+  // An answer must contain at least one letter or number ("-" or "." doesn't count).
+  const hasContent = t => /[\p{L}\p{N}]/u.test(t || "");
+  const MIN_LONG = 20; // minimum characters for field missions and reflections
+  const longEnough = t => hasContent(t) && t.replace(/\s+/g, " ").trim().length >= MIN_LONG;
+
+  // Which steps must be answered: decisions, tasks and reflections.
+  function isAnswered(u, st) {
+    if (st.type === "decision") return !!S.decisions[u.id + "|" + st.caseNo];
+    if (st.type === "task") return !!S.responses[respKey(u.id, st.kind, st.key)];
+    if (st.type === "reflection") return !!S.responses[respKey(u.id, "reflection", "main")];
+    return true;
+  }
+  // The furthest step a student can open: the first unanswered step (field missions don't block moving on,
+  // because they can take weeks, but they do block completing the unit).
+  function gateIdx(u) {
+    const i = u.steps.findIndex(st => st.kind !== "field_mission" && !isAnswered(u, st));
+    return i === -1 ? u.steps.length - 1 : i;
+  }
+
   // ---------- content ----------
   async function loadContent() {
     S.course = []; S.units = []; S.unitById = {}; S.contentErrors = [];
@@ -176,7 +210,10 @@
       el("div", { class: "overall" },
         el("div", { class: "num" }, pct + "%"),
         el("div", { style: "flex:1" },
-          el("div", { class: "small muted" }, done + " of " + S.units.length + " units completed"),
+          el("div", { class: "small muted" }, (() => {
+            const of = kind => { const all = S.units.filter(u => u.kind === kind); return all.filter(u => unitState(u.id) === "completed").length + " of " + all.length; };
+            return of("unit") + " units and " + of("reflection") + " reflections completed";
+          })()),
           el("div", { class: "bar", role: "progressbar", "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 }, el("span", { style: "width:" + pct + "%" })))),
       el("div", { class: "actions" },
         next ? el("button", { class: "btn primary", onclick: () => go("#/unit/" + next.id) },
@@ -227,6 +264,13 @@
       stepIdx = prog && prog.status !== "completed" ? Math.min(Number(prog.current_step || 0), u.steps.length - 1) : 0;
     }
     stepIdx = Math.max(0, Math.min(stepIdx, u.steps.length - 1));
+    const completed = unitState(id) === "completed";
+    const gate = completed ? u.steps.length - 1 : gateIdx(u);
+    if (stepIdx > gate) {
+      if (location.hash !== "#/unit/" + id + "/" + gate) { history.replaceState(null, "", "#/unit/" + id + "/" + gate); }
+      stepIdx = gate;
+    }
+    const flash = S.flash; S.flash = null;
     const step = u.steps[stepIdx];
     const isLast = stepIdx === u.steps.length - 1;
     if (prog && prog.status !== "completed" && Number(prog.current_step || 0) < stepIdx) saveProgress(id, { current_step: String(stepIdx) });
@@ -237,7 +281,7 @@
       u.intro && stepIdx === 0 ? el("p", { class: "intro" }, u.intro) : null,
       u.steps.length > 1 ? el("div", { class: "steps", role: "navigation", "aria-label": "Step " + (stepIdx + 1) + " of " + u.steps.length },
         ...u.steps.map((st, i) => {
-          const reached = unitState(id) === "completed" || i <= Math.max(stepIdx, Number((S.progress[id] || {}).current_step || 0));
+          const reached = completed || (i <= gate && i <= Math.max(stepIdx, Number((S.progress[id] || {}).current_step || 0)));
           return el("button", { class: (i < stepIdx ? "done" : i === stepIdx ? "now" : "") + (reached ? " reach" : ""), disabled: !reached,
             title: "Step " + (i + 1) + ": " + st.title, "aria-label": "Step " + (i + 1) + ": " + st.title,
             onclick: () => go("#/unit/" + id + "/" + i) });
@@ -260,11 +304,20 @@
     else card.append(el("h3", {}, step.title), mdBlock(step.md));
 
     card.append(nav);
-    show(head, card);
+    show(head, flash ? msg(flash) : null, card);
   }
 
   async function completeUnit(u) {
     if (unitState(u.id) !== "completed") {
+      const missing = u.steps.findIndex(st => !isAnswered(u, st));
+      if (missing !== -1) {
+        const st = u.steps[missing];
+        S.flash = st.kind === "field_mission"
+          ? "To complete this unit, finish the field mission: write a short description or upload a file. Everything else in this unit is saved, so you can come back to it any time."
+          : "Please answer this step to complete the unit.";
+        go("#/unit/" + u.id + "/" + missing);
+        return;
+      }
       await saveProgress(u.id, { status: "completed", completed_at: new Date().toISOString(), current_step: String(u.steps.length - 1) });
       const { data } = await sb.rpc("check_badge");
       if (data && !S.student.badge_awarded_at) { S.student.badge_awarded_at = data; go("#/badge"); return; }
@@ -331,22 +384,33 @@
   }
 
   function renderTask(u, step, card, nextBtn) {
+    if (step.trueFalse) return renderTrueFalse(u, step, card, nextBtn);
     const prev = S.responses[respKey(u.id, step.kind, step.key)];
+    const isFM = step.kind === "field_mission";
     const ta = el("textarea", { id: "answer", "aria-label": "Your answer" });
-    ta.value = prev ? prev.answer.text || "" : "";
+    const savedText = prev ? prev.answer.text || "" : "";
+    ta.value = savedText;
+    const dk = draftKey(u.id, step.key);
+    const draftNote = bindDraft(ta, dk, savedText);
     const out = el("div");
     const reveal = step.reveal ? mdBlock(step.reveal, "reveal") : null;
     if (reveal && !prev) reveal.classList.add("hidden");
     let files = prev && prev.answer.files ? prev.answer.files.slice() : [];
     const saveBtn = el("button", { class: "btn", onclick: async () => {
-      if (!ta.value.trim() && !files.length) { out.replaceChildren(msg("Write your answer first.")); return; }
-      const err = await saveResponse(u.id, step.kind, step.key, step.kind === "field_mission" ? { text: ta.value.trim(), files } : { text: ta.value.trim() });
+      const text = ta.value.trim();
+      if (isFM ? !(longEnough(text) || files.length) : !hasContent(text)) {
+        out.replaceChildren(msg(isFM ? "Describe what you found in at least a sentence, or upload a file." : "Write your answer first."));
+        return;
+      }
+      const err = await saveResponse(u.id, step.kind, step.key, isFM ? { text, files } : { text });
       out.replaceChildren(err ? msg("Your answer couldn't be saved: " + err.message) : msg("Saved.", "ok"));
-      if (!err) { nextBtn.disabled = false; if (reveal) reveal.classList.remove("hidden"); }
+      if (!err) { setDraft(dk, ""); if (draftNote) draftNote.remove(); nextBtn.disabled = false; if (reveal) reveal.classList.remove("hidden"); }
     } }, step.reveal && !prev ? "Save and show answers" : "Save answer");
     card.append(el("h3", {}, step.title), mdBlock(step.md));
 
-    if (step.kind === "field_mission") card.append(el("p", { class: "small muted" }, "You can save what you have now and come back to add more later."));
+    if (isFM) card.append(el("p", { class: "small muted" }, prev
+      ? "Thanks, your field mission is saved. You can come back and add more at any time."
+      : "To complete this unit, write a few sentences about what you found or upload a file. If you need more time, continue to the next step now and come back when you've done the mission."));
     if (step.hasExample) card.append(el("p", { class: "small muted" }, "After you save, the next page shows an example to compare with."));
     let uploader = null;
     if (step.kind === "field_mission") {
@@ -379,10 +443,48 @@
         el("p", { class: "small muted", style: "margin:0 0 6px" }, "Remove names and personal details before uploading. Only you and ENAI can see your files."),
         input, list);
     }
-    card.append(...[ta, uploader, el("div", { class: "actions" }, saveBtn), out].filter(Boolean));
+    card.append(...[ta, draftNote, uploader, el("div", { class: "actions" }, saveBtn), out].filter(Boolean));
     if (reveal) card.append(reveal);
     appendFeedback(card, prev);
     if (!prev && step.kind !== "field_mission") nextBtn.disabled = true;
+  }
+
+  function renderTrueFalse(u, step, card, nextBtn) {
+    const prev = S.responses[respKey(u.id, step.kind, step.key)];
+    const picks = Object.assign({}, prev && prev.answer.choices ? prev.answer.choices : {});
+    let checked = !!(prev && prev.answer.choices);
+    const out = el("div");
+    const reveal = step.reveal ? mdBlock(step.reveal, "reveal") : null;
+    if (reveal && !prev) reveal.classList.add("hidden");
+    const list = el("ul", { class: "tf" });
+    const saveBtn = el("button", { class: "btn", onclick: async () => {
+      if (!step.trueFalse.every(st => picks[st.no])) { out.replaceChildren(msg("Choose True or False for every statement.")); return; }
+      const text = step.trueFalse.map(st => st.no + ". " + st.text + " " + picks[st.no]).join("\n");
+      const err = await saveResponse(u.id, step.kind, step.key, { text, choices: picks });
+      out.replaceChildren(err ? msg("Your answers couldn't be saved: " + err.message) : msg("Saved.", "ok"));
+      if (!err) { checked = true; draw(); nextBtn.disabled = false; if (reveal) reveal.classList.remove("hidden"); }
+    } }, "Check my answers");
+    function draw() {
+      list.replaceChildren(...step.trueFalse.map(st => {
+        const mine = picks[st.no];
+        const right = checked && mine && st.answer ? mine === st.answer : null;
+        return el("li", {},
+          el("span", { class: "stmt" }, st.no + ". " + st.text),
+          el("span", { class: "choices", role: "group", "aria-label": "Statement " + st.no },
+            ...["True", "False"].map(v => el("button", { class: "btn small", type: "button", "aria-pressed": mine === v ? "true" : "false",
+              onclick: () => { picks[st.no] = v; checked = false; out.replaceChildren(); draw(); } }, v))),
+          right == null ? null : el("span", { class: "mark " + (right ? "ok" : "no") }, right ? "✓ Correct" : "✗ It's " + st.answer.toLowerCase()));
+      }));
+      saveBtn.disabled = !step.trueFalse.every(st => picks[st.no]);
+    }
+    card.append(el("h3", {}, step.title));
+    if (step.md) card.append(mdBlock(step.md));
+    card.append(el("p", { class: "small muted" }, "Choose True or False for each statement, then check your answers."), list,
+      el("div", { class: "actions" }, saveBtn), out);
+    draw();
+    if (reveal) card.append(reveal);
+    appendFeedback(card, prev);
+    if (!prev) nextBtn.disabled = true;
   }
 
   function renderCompare(u, step, card) {
@@ -398,14 +500,17 @@
   function renderReflection(u, step, card, nextBtn) {
     const prev = S.responses[respKey(u.id, "reflection", "main")];
     const ta = el("textarea", { id: "answer", "aria-label": "Your reflection", style: "min-height:200px" });
-    ta.value = prev ? prev.answer.text || "" : "";
+    const savedText = prev ? prev.answer.text || "" : "";
+    ta.value = savedText;
+    const dk = draftKey(u.id, "reflection");
+    const draftNote = bindDraft(ta, dk, savedText);
     const out = el("div");
-    card.append(el("h3", {}, "Your reflection"), mdBlock(step.md), ta,
+    card.append(el("h3", {}, "Your reflection"), mdBlock(step.md), ta, draftNote,
       el("div", { class: "actions" }, el("button", { class: "btn", onclick: async () => {
-        if (!ta.value.trim()) { out.replaceChildren(msg("Write your reflection first.")); return; }
+        if (!longEnough(ta.value)) { out.replaceChildren(msg(ta.value.trim() ? "Please write a bit more: at least a full sentence." : "Write your reflection first.")); return; }
         const err = await saveResponse(u.id, "reflection", "main", { text: ta.value.trim() });
         out.replaceChildren(err ? msg("Your reflection couldn't be saved: " + err.message) : msg("Saved. An ENAI representative will reply with feedback.", "ok"));
-        if (!err) nextBtn.disabled = false;
+        if (!err) { setDraft(dk, ""); if (draftNote) draftNote.remove(); nextBtn.disabled = false; }
       } }, prev ? "Update reflection" : "Send reflection")), out);
     if (!prev) nextBtn.disabled = true;
 
@@ -467,7 +572,9 @@
     const nodes = [el("div", { class: "unit-head" },
       el("p", { class: "kicker" }, el("button", { class: "btn link", onclick: () => go("#/") }, "All modules")),
       el("h2", {}, "My answer kit"),
-      el("p", { class: "intro" }, "Everything you've collected during the training, in one place. Keep it open when a student asks you something: most questions can be answered by pointing to the right page or person."),
+      el("p", { class: "intro" }, "Your own quick guide to where students at your institution can get help."),
+      el("p", {}, "Some tasks in the training ask you to look up real contacts, links and rules at your institution (in units " + items.map(x => x.u.id).join(", ") + "). Whatever you write in those tasks is collected here automatically, so you don't have to copy anything."),
+      el("p", {}, "During your year as an ambassador, open this page when a student asks you something: most questions can be answered by pointing to the right page or person. You can edit any section at any time."),
       el("p", { class: "small muted" }, filled + " of " + items.length + " sections filled in"))];
     for (const { u, st, i } of items) {
       const r = S.responses[respKey(u.id, st.kind, st.key)];
@@ -689,8 +796,13 @@
   }
 
   window.addEventListener("hashchange", route);
-  sb.auth.onAuthStateChange((event) => {
-    if (event === "SIGNED_IN" || event === "SIGNED_OUT") boot();
+  // Supabase also fires SIGNED_IN when the tab regains focus. Only reload when the user actually changes,
+  // otherwise the page re-renders and unsaved text is lost.
+  sb.auth.onAuthStateChange((event, session) => {
+    if (event !== "SIGNED_IN" && event !== "SIGNED_OUT") return;
+    const newId = session && session.user ? session.user.id : null;
+    const curId = S.user ? S.user.id : null;
+    if (newId !== curId) setTimeout(boot, 0);
   });
 
   (async () => {

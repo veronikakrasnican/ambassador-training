@@ -94,10 +94,29 @@
             prompt = prompt.map(p => p.replace(/\s*(Then compare it with (this|the) example( below)?[.:]|For example:)\s*$/i, "")).filter(Boolean);
           }
           const key = "s" + i;
-          steps.push({
+          const task = {
             type: "task", title: s.heading, md: prompt.join("\n\n"), reveal: reveal.join("\n\n"),
             kind: h.includes("field mission") ? "field_mission" : "your_turn", key, hasExample: examples.length > 0
-          });
+          };
+          // "Your turn: true or false?" with a numbered list becomes one True/False choice per statement.
+          if (/true or false/i.test(h)) {
+            const statements = [];
+            const rest = [];
+            task.md.split("\n").forEach(line => {
+              const m = line.match(/^\s*(\d+)\.\s+(.+)$/);
+              if (m) statements.push({ no: m[1], text: m[2].trim() });
+              else rest.push(line);
+            });
+            if (statements.length) {
+              const correct = {};
+              const re = /(\d+)\s+(?:is|are)\s+(true|false)/gi;
+              let a;
+              while ((a = re.exec(task.reveal))) correct[a[1]] = a[2].toLowerCase() === "true" ? "True" : "False";
+              task.trueFalse = statements.map(st => ({ ...st, answer: correct[st.no] || null }));
+              task.md = rest.join("\n").trim();
+            }
+          }
+          steps.push(task);
           if (examples.length) steps.push({ type: "compare", title: "Compare with an example", md: examples.join("\n\n"), key, kind: h.includes("field mission") ? "field_mission" : "your_turn" });
         } else if (h.startsWith("takeaway")) {
           steps.push({ type: "takeaway", title: "Takeaway", md: s.md });

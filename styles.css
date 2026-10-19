@@ -32,6 +32,7 @@ a { color: var(--accent); text-underline-offset: 2px; }
 .brand { position: relative; margin: -24px -20px 8px; padding: 0 20px 18px; overflow: hidden; }
 .brand .blob { position: absolute; left: -80px; top: -250px; width: 560px; height: 400px; border-radius: 50%; background: var(--beige); }
 .brand .row { position: relative; display: flex; align-items: center; gap: 14px; padding-top: 22px; }
+.brand .logo-link { display: block; line-height: 0; border-radius: 14px; }
 .brand .logo { height: 72px; width: 72px; object-fit: contain; }
 :root[data-theme="dark"] .brand .logo { background: #F5F2E7; border-radius: 14px; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .brand .logo { background: #F5F2E7; border-radius: 14px; } }
@@ -160,3 +161,15 @@ label.field { display: block; margin: 14px 0 6px; font-weight: 600; font-size: 1
 .share-steps li { margin: 14px 0; }
 .share-steps textarea { margin-top: 8px; }
 .badge-wrap svg { width: 300px; }
+
+/* true/false statements */
+.tf { list-style: none; padding: 0; margin: 12px 0; }
+.tf li { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+.tf li:first-child { border-top: 0; }
+.tf .stmt { flex: 1 1 260px; }
+.tf .choices { display: flex; gap: 6px; }
+.tf .choices .btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--card); }
+.tf .mark { font-size: 14px; font-weight: 600; min-width: 92px; }
+.tf .mark.ok { color: var(--accent); }
+.tf .mark.no { color: var(--warn); }
+.draft-note { margin: 6px 0 0; }
